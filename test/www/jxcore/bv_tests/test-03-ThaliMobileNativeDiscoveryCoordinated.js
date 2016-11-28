@@ -153,8 +153,8 @@ test('initial peer discovery', function (t) {
   // After 10 seconds we will check whether we have all peers.
   setTimeout(function () {
     var peersReceived = Object.getOwnPropertyNames(currentPeers);
-    t.ok(
-      peersReceived.length === t.participants.length - 1,
+    t.equal(
+      peersReceived.length, t.participants.length - 1,
       'We have received peers we expected'
     );
 
@@ -199,8 +199,8 @@ test('initial peer discovery', function (t) {
     // After 10 seconds we will check whether we have all peers.
     setTimeout(function () {
       var peersReceived = Object.getOwnPropertyNames(currentPeers);
-      t.ok(
-        peersReceived.length === t.participants.length - 1,
+      t.equal(
+        peersReceived.length, t.participants.length - 1,
         'We have received peers we expected'
       );
 
@@ -250,19 +250,21 @@ test('check latest peer discovery', function() {
       // After 10 seconds we will check whether we have all peers
       // from the latest peer discovery.
       setTimeout(function () {
-        var peersReceived = Object.getOwnPropertyNames(currentPeers);
-        t.ok(
-          peersReceived.length === t.participants.length - 1,
-          'We have received peers we expected'
-        );
+        var peersReceived = Object.keys(currentPeers);
+        var previousTestPeers = Object.keys(peersFromPreviousTest);
+
+        peersReceived.sort();
+        previousTestPeers.sort();
 
         Mobile('peerAvailabilityChanged').registerToNative(function () {});
 
-        var samePeers = peersReceived.every(function (idAndGeneration) {
-          return peersFromPreviousTest[idAndGeneration];
-        });
-        t.ok(
-          samePeers,
+        t.equal(
+          peersReceived.length, t.participants.length - 1,
+          'We have received peers we expected'
+        );
+
+        t.deepEqual(
+          peersReceived, previousTestPeers,
           'We have received peers from the latest peer discovery'
         );
 
@@ -302,7 +304,7 @@ test('no peer discovery',
   mobileIsListening = true;
 
   function newPeersHandler(peers) {
-    t.ok(peers.length === 0, 'We should not receive peers');
+    t.deepEqual(peers, [], 'We should not receive peers');
   }
 
   Mobile('startListeningForAdvertisements')
