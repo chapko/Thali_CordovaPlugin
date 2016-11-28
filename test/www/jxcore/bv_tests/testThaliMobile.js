@@ -1780,7 +1780,7 @@ test('If a peer is not available (and hence is not in the thaliMobile cache)' +
   }
 );
 
-test.only('does not fire duplicate events after peer listener recreation',
+test('does not fire duplicate events after peer listener recreation',
   function () {
     return !platform.isAndroid ||
       global.NETWORK_TYPE !== ThaliMobile.networkTypes.NATIVE;
