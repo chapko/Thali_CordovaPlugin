@@ -1907,7 +1907,7 @@ var pskIdToSecret = function (id) {
 
 var setupDiscoveryAndFindPeers = function (t, router, callback) {
   var availabilityHandler = function (peer) {
-    if (peer.hostAddress === null || peer.portNumber === null) {
+    if (!peer.peerAvailable) {
       return;
     }
     callback(peer, function () {
