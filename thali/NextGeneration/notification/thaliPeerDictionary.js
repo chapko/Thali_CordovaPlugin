@@ -36,6 +36,12 @@ module.exports.peerState = {
   WAITING: 'waiting'
 };
 
+/**
+ * Peer object that used as a dictionary key.
+ * @typedef {Object} Peer
+ * @property {string} peerIdentifier
+ * @property {number} generation
+ */
 
 
 /**
@@ -90,6 +96,23 @@ NotificationPeerDictionaryEntry.prototype.retryCounter = null;
 module.exports.NotificationPeerDictionaryEntry =
   NotificationPeerDictionaryEntry;
 
+
+/**
+ * @classdesc Wrapper class for dictionary entries which holds entry and all
+ * related metadata
+ *
+ * @private
+ * @param {Peer} peer
+ * @param {module:thaliPeerDictionary~NotificationPeerDictionaryEntry} entry
+ * @param {Object} metadata
+ * @constructor
+ */
+function EntryContainer(peer, entry, metadata) {
+  this.peer = peer;
+  this.entry = entry;
+  this.metadata = Object(metadata);
+}
+
 /**
  * @classdesc This class manages a dictionary of discovered peers. It manages
  * how many entries are in the dictionary so that we don't overflow memory.
@@ -129,29 +152,29 @@ PeerDictionary.MAXSIZE = 100;
  * @param {module:thaliPeerDictionary~NotificationPeerDictionaryEntry} entry
  * Entry to be added.
   */
-PeerDictionary.prototype.addUpdateEntry =
-  function (peer, entry) {
-    var peerIdentifier = peer.peerIdentifier;
-    var generation = peer.generation;
-    assert(peerIdentifier, 'peer.peerIdentifier must be set');
-    assert(typeof generation === 'number', 'peer.generation must be a number');
+PeerDictionary.prototype.addUpdateEntry = function (peer, entry) {
+  var peerIdentifier = peer.peerIdentifier;
+  var generation = peer.generation;
+  assert(peerIdentifier, 'peer.peerIdentifier must be set');
+  assert(typeof generation === 'number', 'peer.generation must be a number');
 
-    if (!this._dictionary[peerIdentifier]) {
-      this._dictionary[peerIdentifier] = {};
-    }
+  if (!this._dictionary[peerIdentifier]) {
+    this._dictionary[peerIdentifier] = {};
+  }
 
-    var peerEntries = this._dictionary[peerIdentifier];
-    if (!peerEntries[generation]) {
-      this._removeOldestIfOverflow();
-      peerEntries[generation] = {
-        peerIdentifier: peerIdentifier,
-        generation: generation,
-      };
-    }
+  var peerEntryContainers = this._dictionary[peerIdentifier];
+  if (!peerEntryContainers[generation]) {
+    this._removeOldestIfOverflow();
+    peerEntryContainers[generation] = new EntryContainer({
+      peerIdentifier: peerIdentifier,
+      generation: generation,
+    });
+  }
 
-    peerEntries[generation].entry = entry;
-    peerEntries[generation].entryNumber = this._entryCounter++;
-  };
+  peerEntryContainers[generation].entry = entry;
+  peerEntryContainers
+  peerEntryContainers[generation].entryNumber = this._entryCounter++;
+};
 
 /**
  * Removes an entry which matches with the peer.
