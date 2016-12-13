@@ -1,5 +1,8 @@
 'use strict';
 
+var extend = require('js-extend');
+
+
 var cache = null;
 
 // max possible age of the zombie (in ms);
@@ -13,11 +16,13 @@ var generationUpdateWindow = null;
 var wrapAroundTime = null;
 
 function cachePeer (peerIdentifier, realGeneration, fakeGeneration) {
-  cache[peerIdentifier] = {
+  var cachedPeer = {
     realGeneration: realGeneration,
     fakeGeneration: fakeGeneration,
     time: Date.now(),
   };
+  cache[peerIdentifier] = cachedPeer;
+  return cachedPeer;
 }
 
 function shouldIgnoreAnnouncement (nativePeer) {
@@ -28,9 +33,33 @@ function shouldIgnoreAnnouncement (nativePeer) {
     return false;
   }
 
+  var lastGeneration = cachedPeer.realGeneration;
+  var newGeneration = nativePeer.generation;
   var elapsedTime = Date.now() - cachedPeer.time;
-  var maxPossibleGenerationUpdates = elapsedTime * generationMaxUpdateSpeed;
-  if (elapsedTime > )
+
+  // So much time has passed that any generation is possibly real
+  if (elapsedTime + zombieTime >= wrapAroundTime) {
+    return false;
+  }
+
+  var maxGenerations = (elapsedTime + zombieTime) / generationUpdateWindow;
+  var leftBorder = (lastGeneration + 1) % 256;
+  var rightBorder = (lastGeneration + maxGenerations) % 256;
+
+  var isValidGeneration = leftBorder < rightBorder ?
+    newGeneration >= leftBorder && newGeneration <= rightBorder :
+    newGeneration <= rightBorder || newGeneration >= leftBorder;
+
+  return !isValidGeneration;
+}
+
+function fixPeerGeneration (nativePeer) {
+  var cachedPeer = cache[nativePeer.peerGeneration];
+  var fixedPeer = extend({}, nativePeer);
+  if (cachedPeer) {
+    fixedPeer.generation = cachedPeer.fakeGeneration;
+  }
+  return fixedPeer;
 }
 
 function zombieFilter (handleNonTCPPeer, config) {
@@ -68,7 +97,10 @@ function zombieFilter (handleNonTCPPeer, config) {
       return;
     }
 
-    cachePeer(peerIdentifier, generation, cachedPeer.fakeGeneration + 1);
+    cachedPeer = cachePeer(peerIdentifier, generation, cachedPeer.fakeGeneration + 1);
+
+    var fixedPeer = fixPeerGeneration(nativePeer);
+    handleNonTCPPeer(fixedPeer);
   };
 }
 
