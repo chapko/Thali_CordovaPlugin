@@ -15,6 +15,7 @@ var thaliWifiInfrastructure = new ThaliWifiInfrastructure();
 /**
  * for testing purposes
  * @private
+ * @returns {module:ThaliWifiInfrastructure~ThaliWifiInfrastructure}
  */
 module.exports._getThaliWifiInfrastructure = function () {
   return thaliWifiInfrastructure;
@@ -24,7 +25,7 @@ var Promise = require('lie');
 var PromiseQueue = require('./promiseQueue');
 var promiseQueue = new PromiseQueue();
 
-var promiseResultSuccessOrFailure = function (promise) {
+function promiseResultSuccessOrFailure (promise) {
   return promise.then(function (success) {
     return success;
   }).catch(function (failure) {
@@ -34,7 +35,7 @@ var promiseResultSuccessOrFailure = function (promise) {
   });
 };
 
-var getCombinedResult = function (results) {
+function getCombinedResult (results) {
   return {
     wifiResult: results[0] || null,
     nativeResult: results[1] || null
@@ -54,7 +55,7 @@ var networkTypes = {
 };
 module.exports.networkTypes = networkTypes;
 
-var getMethodIfExists = function (target, method) {
+function getMethodIfExists (target, method) {
   if (!target[method]) {
     throw new Error(target + ' has no method named ' +
       method);
@@ -65,7 +66,7 @@ var getMethodIfExists = function (target, method) {
   };
 };
 
-var getWifiOrNativeMethodByNetworkType = function (method, networkType) {
+function getWifiOrNativeMethodByNetworkType (method, networkType) {
   var wifiMethod;
   var nativeMethod;
   switch (networkType) {
@@ -107,7 +108,7 @@ var getWifiOrNativeMethodByNetworkType = function (method, networkType) {
   }
 };
 
-var getInitialStates = function () {
+function getInitialStates () {
   return {
     started: false,
     listening: false,
@@ -117,6 +118,12 @@ var getInitialStates = function () {
 };
 
 var thaliMobileStates = getInitialStates();
+
+// TODO: move peer availability cache to the separate module
+var peerAvailabilities = {};
+peerAvailabilities[connectionTypes.MULTI_PEER_CONNECTIVITY_FRAMEWORK] = {};
+peerAvailabilities[connectionTypes.BLUETOOTH] = {};
+peerAvailabilities[connectionTypes.TCP_NATIVE] = {};
 
 /** @module thaliMobile */
 
@@ -383,6 +390,18 @@ module.exports.getNetworkStatus = function () {
 };
 
 /**
+ * for testing purposes
+ * TODO: leave only one way to access peer availabilities
+ * @private
+ * @return {Object}
+ */
+module.exports._getPeerAvailabilities = function () {
+  return peerAvailabilities;
+};
+
+module.exports._peerAvailabilities = peerAvailabilities;
+
+/**
  * @public
  * @typedef peerHostInfo
  * @property {string} hostAddress The IP/DNS address to connect to or null if
@@ -394,7 +413,8 @@ module.exports.getNetworkStatus = function () {
  * put on the TCP connection. For some transports a handshake can take quite a
  * long time.
  */
-var PeerHostInfo = function (peer) {
+
+function PeerHostInfo (peer) {
   this.hostAddress = peer.hostAddress;
   this.portNumber = peer.portNumber;
   this.suggestedTCPTimeout = peer.suggestedTCPTimeout;
@@ -484,11 +504,11 @@ var getPeerHostInfoStrategies = (function () {
  * set per thaliConfig.
  *
  * @public
- * @property {string} peerIdentifier This is exclusively used to detect if
+ * @param {string} peerIdentifier This is exclusively used to detect if
  * this is a repeat announcement or if a peer has gone to correlate it to the
  * announcement of the peer's presence. But this value is not used to establish
  * a connection to the peer, the hostAddress and portNumber handle that.
- * @property {module:ThaliMobileNativeWrapper~connectionTypes} connectionType
+ * @param {module:ThaliMobileNativeWrapper~connectionTypes} connectionType
  * Defines the kind of connection that the request will eventually go over. This
  * information is needed so that we can better manage how we use the different
  * transport types available to us.
@@ -525,9 +545,9 @@ module.exports.getPeerHostInfo = function(peerIdentifier, connectionType) {
  * from `getPeerHostInfo` method) to prevent possible race conditions...
  *
  * @public
- * @property {string} peerIdentifier Value from peerAvailabilityChanged event.
- * @property {module:ThaliMobileNativeWrapper~connectionTypes} connectionType
- * @property {number} portNumber
+ * @param {string} peerIdentifier Value from peerAvailabilityChanged event.
+ * @param {module:ThaliMobileNativeWrapper~connectionTypes} connectionType
+ * @param {number} portNumber
  * @returns {Promise<?Error>}
  */
 module.exports.disconnect =
@@ -914,7 +934,7 @@ module.exports.disconnect =
  */
 
 
-var PeerAvailabilityStatus = function (peer) {
+function PeerAvailabilityStatus (peer) {
   this.peerIdentifier = peer.peerIdentifier;
   this.connectionType = peer.connectionType;
   this.peerAvailable = Boolean(peer.peerAvailable);
@@ -927,7 +947,7 @@ var PeerAvailabilityStatus = function (peer) {
   }
 };
 
-var emitPeerUnavailable = function (peerIdentifier, connectionType) {
+function emitPeerUnavailable (peerIdentifier, connectionType) {
   var unavailable = new PeerAvailabilityStatus({
     peerIdentifier: peerIdentifier,
     connectionType: connectionType
@@ -937,44 +957,26 @@ var emitPeerUnavailable = function (peerIdentifier, connectionType) {
   module.exports.emitter.emit('peerAvailabilityChanged', unavailable);
 };
 
-// TODO: move peer availability cache to the separate module
-var peerAvailabilities = {};
-peerAvailabilities[connectionTypes.MULTI_PEER_CONNECTIVITY_FRAMEWORK] = {};
-peerAvailabilities[connectionTypes.BLUETOOTH] = {};
-peerAvailabilities[connectionTypes.TCP_NATIVE] = {};
-
-/**
- * for testing purposes
- * TODO: leave only one way to access peer availabilities
- * @private
- * @return {Object}
- */
-module.exports._getPeerAvailabilities = function () {
-  return peerAvailabilities;
-};
-
-module.exports._peerAvailabilities = peerAvailabilities;
-
-var peersDiff = function (oldState, newState) {
-  var samePeer = (
+function peersDiff (oldState, newState) {
+  var samePeer =
     oldState.peerIdentifier === newState.peerIdentifier &&
-    oldState.connectionType === newState.connectionType
-  );
+    oldState.connectionType === newState.connectionType;
+
   if (!samePeer) {
     throw new Error('Cannot compare state of different peers');
   }
   return {
     peerIdentifier: oldState.peerIdentifier,
     connectionType: oldState.connectionType,
-    peerAvailable: (newState.peerAvailable !== oldState.peerAvailable),
-    generation: (newState.generation - oldState.generation),
-    hostAddress: (newState.hostAddress !== oldState.hostAddress),
-    portNumber: (newState.portNumber !== oldState.portNumber),
-    availableSince: (newState.availableSince - oldState.availableSince)
+    peerAvailable: newState.peerAvailable !== oldState.peerAvailable,
+    generation: newState.generation - oldState.generation,
+    hostAddress: newState.hostAddress !== oldState.hostAddress,
+    portNumber: newState.portNumber !== oldState.portNumber,
+    availableSince: newState.availableSince - oldState.availableSince
   };
 };
 
-var handlePeer = function (peer) {
+function handlePeer (peer) {
   var cachedPeer = peerAvailabilities[peer.connectionType][peer.peerIdentifier];
 
   if (!cachedPeer && !peer.peerAvailable) {
@@ -994,7 +996,7 @@ var handlePeer = function (peer) {
       ignoreChanges = ignoreChanges &&
         (diff.generation === 0 && !isWrapAroundElapsed);
     } else {
-      ignoreChanges = ignoreChanges && (diff.generation <= 0);
+      ignoreChanges = ignoreChanges && diff.generation <= 0;
     }
 
     if (ignoreChanges) {
@@ -1026,7 +1028,7 @@ var handlePeer = function (peer) {
   module.exports.emitter.emit('peerAvailabilityChanged', peerStatus);
 };
 
-var handleRecreatedPeer = function (nativePeer) {
+function handleRecreatedPeer (nativePeer) {
   var cachedPeer =
     peerAvailabilities[connectionTypes.BLUETOOTH][nativePeer.peerIdentifier];
 
@@ -1108,7 +1110,7 @@ peerAvailabilityWatchers[connectionTypes.TCP_NATIVE] = {};
 
 module.exports._peerAvailabilityWatchers = peerAvailabilityWatchers;
 
-var isAvailabilityWatcherForPeerExist = function (peer) {
+function isAvailabilityWatcherForPeerExist (peer) {
   var connectionType = peer.connectionType;
   var peerIdentifier = peer.peerIdentifier;
   var peerAvailabilityWatchersByConnectionType =
@@ -1118,7 +1120,7 @@ var isAvailabilityWatcherForPeerExist = function (peer) {
   peerAvailabilityWatchersByConnectionType[peerIdentifier]);
 };
 
-var watchForPeerAvailability = function (peer) {
+function watchForPeerAvailability (peer) {
   var peerIdentifier = peer.peerIdentifier;
   var connectionType = peer.connectionType;
 
@@ -1138,7 +1140,7 @@ var watchForPeerAvailability = function (peer) {
   emitPeerUnavailable(peerIdentifier, connectionType);
 };
 
-var addAvailabilityWatcherToPeerIfNotExist = function (peer) {
+function addAvailabilityWatcherToPeerIfNotExist (peer) {
   if (isAvailabilityWatcherForPeerExist(peer)) {
     return;
   }
@@ -1156,7 +1158,7 @@ var addAvailabilityWatcherToPeerIfNotExist = function (peer) {
     setInterval(watchForPeerAvailability, unavailabilityThreshold, peer);
 };
 
-var removeAvailabilityWatcherFromPeerIfExists = function (peer) {
+function removeAvailabilityWatcherFromPeerIfExists (peer) {
   if (!isAvailabilityWatcherForPeerExist(peer)) {
     return;
   }
@@ -1185,23 +1187,23 @@ var removeAllAvailabilityWatchersFromPeersByConnectionType =
       });
   };
 
-var removeAllAvailabilityWatchersFromPeers = function () {
+function removeAllAvailabilityWatchersFromPeers () {
   Object.keys(peerAvailabilityWatchers)
     .forEach(removeAllAvailabilityWatchersFromPeersByConnectionType);
 };
 
-var changeCachedPeerUnavailable = function (peer) {
+function changeCachedPeerUnavailable (peer) {
   removeAvailabilityWatcherFromPeerIfExists(peer);
   delete peerAvailabilities[peer.connectionType][peer.peerIdentifier];
 };
 
-var changeCachedPeerAvailable = function (peer) {
+function changeCachedPeerAvailable (peer) {
   var cachedPeer = JSON.parse(JSON.stringify(peer));
   peerAvailabilities[peer.connectionType][peer.peerIdentifier] = cachedPeer;
   addAvailabilityWatcherToPeerIfNotExist(cachedPeer);
 };
 
-var changePeersUnavailable = function (connectionType) {
+function changePeersUnavailable (connectionType) {
   Object.keys(peerAvailabilities[connectionType]).forEach(
     function (peerIdentifier) {
       var peer = peerAvailabilities[connectionType][peerIdentifier];
@@ -1236,14 +1238,14 @@ var discoveryAdvertisingState = {
   wifiAdvertisingActive: false
 };
 
-var getDiscoveryAdvertisingState = function () {
+function getDiscoveryAdvertisingState () {
   var state = JSON.parse(JSON.stringify(discoveryAdvertisingState));
   state.discoveryActive = thaliMobileStates.listening;
   state.advertisingActive = thaliMobileStates.advertising;
   return state;
 };
 
-var verifyDiscoveryAdvertisingState = function (state) {
+function verifyDiscoveryAdvertisingState (state) {
   var listening = thaliMobileStates.listening;
   var advertising = thaliMobileStates.advertising;
   if (listening !== state.discoveryActive ||
@@ -1258,7 +1260,7 @@ var verifyDiscoveryAdvertisingState = function (state) {
 
 var emittedDiscoveryAdvertisingStateUpdate = {};
 
-var emitDiscoveryAdvertisingStateUpdate = function () {
+function emitDiscoveryAdvertisingStateUpdate () {
   if (!thaliMobileStates.started) {
     logger.info(
       'Filtered out discoveryAdvertisingStateUpdate (was in stopped state).'
@@ -1336,7 +1338,7 @@ thaliWifiInfrastructure.on(
   }
 );
 
-var handleNetworkChanged = function (networkChangedValue) {
+function handleNetworkChanged (networkChangedValue) {
   if (networkChangedValue.wifi === 'off') {
     // If Wifi is off, we mark Wifi peers unavailable.
     changePeersUnavailable(connectionTypes.TCP_NATIVE);
@@ -1387,7 +1389,7 @@ var handleNetworkChanged = function (networkChangedValue) {
   });
 };
 
-var handleNetworkChangedNonTCP = function (networkChangedValue) {
+function handleNetworkChangedNonTCP (networkChangedValue) {
   if (!thaliMobileStates.started) {
     logger.info(
       'Filtered out networkChangedNonTCP (was in stopped state).'
@@ -1399,7 +1401,7 @@ var handleNetworkChangedNonTCP = function (networkChangedValue) {
   module.exports.emitter.emit('networkChanged', networkChangedValue);
 };
 
-var handleNetworkChangedWifi = function (networkChangedValue) {
+function handleNetworkChangedWifi (networkChangedValue) {
   logger.warn('networkChangedWifi should not be fired because it is not implemented');
   handleNetworkChangedNonTCP(networkChangedValue);
 };
