@@ -12,10 +12,11 @@ var connectionTypes = ThaliMobileNativeWrapper.connectionTypes;
 
 var ThaliWifiInfrastructure = require('./thaliWifiInfrastructure');
 var thaliWifiInfrastructure = new ThaliWifiInfrastructure();
+
 /**
  * for testing purposes
  * @private
- * @returns {module:ThaliWifiInfrastructure~ThaliWifiInfrastructure}
+ * @returns {module:ThaliWifiInfrastrucutre~ThaliWifiInfrastructure}
  */
 module.exports._getThaliWifiInfrastructure = function () {
   return thaliWifiInfrastructure;
@@ -124,6 +125,18 @@ var peerAvailabilities = {};
 peerAvailabilities[connectionTypes.MULTI_PEER_CONNECTIVITY_FRAMEWORK] = {};
 peerAvailabilities[connectionTypes.BLUETOOTH] = {};
 peerAvailabilities[connectionTypes.TCP_NATIVE] = {};
+
+/**
+ * for testing purposes
+ * TODO: leave only one way to access peer availabilities
+ * @private
+ * @return {Object}
+ */
+module.exports._getPeerAvailabilities = function () {
+  return peerAvailabilities;
+};
+
+module.exports._peerAvailabilities = peerAvailabilities;
 
 /** @module thaliMobile */
 
@@ -388,18 +401,6 @@ module.exports.getNetworkStatus = function () {
     }
   });
 };
-
-/**
- * for testing purposes
- * TODO: leave only one way to access peer availabilities
- * @private
- * @return {Object}
- */
-module.exports._getPeerAvailabilities = function () {
-  return peerAvailabilities;
-};
-
-module.exports._peerAvailabilities = peerAvailabilities;
 
 /**
  * @public
