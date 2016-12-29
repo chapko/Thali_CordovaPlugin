@@ -165,6 +165,24 @@ module.exports._peerAvailabilities = peerAvailabilities;
  * @property {?Error} nativeResult
  */
 
+function start (router, pskIdToSecret, networkType) {
+  if (thaliMobileStates.started === true) {
+    return Promise.reject(new Error('Call Stop!'));
+  }
+  thaliMobileStates.started = true;
+  thaliMobileStates.networkType =
+    networkType || global.NETWORK_TYPE || thaliMobileStates.networkType;
+
+  return getWifiOrNativeMethodByNetworkType('start',
+    thaliMobileStates.networkType)(router, pskIdToSecret)
+    .then(function (result) {
+      if (result.wifiResult === null && result.nativeResult === null) {
+        return result;
+      }
+      return Promise.reject(result);
+    });
+};
+
 /**
  * This method MUST be called before any other method here other than
  * registering for events on the emitter. This method will call start on both
@@ -201,21 +219,7 @@ module.exports._peerAvailabilities = peerAvailabilities;
  */
 module.exports.start = function (router, pskIdToSecret, networkType) {
   return promiseQueue.enqueue(function (resolve, reject) {
-    if (thaliMobileStates.started === true) {
-      return reject(new Error('Call Stop!'));
-    }
-    thaliMobileStates.started = true;
-    thaliMobileStates.networkType =
-      networkType || global.NETWORK_TYPE || thaliMobileStates.networkType;
-
-    getWifiOrNativeMethodByNetworkType('start',
-      thaliMobileStates.networkType)(router, pskIdToSecret)
-      .then(function (result) {
-        if (result.wifiResult === null && result.nativeResult === null) {
-          return resolve(result);
-        }
-        return reject(result);
-      });
+    start(router, pskIdToSecret, networkType).then(resolve, reject);
   });
 };
 
@@ -1340,29 +1344,35 @@ thaliWifiInfrastructure.on(
 );
 
 function handleNetworkChanged (networkChangedValue) {
-  if (networkChangedValue.wifi === 'off') {
-    // If Wifi is off, we mark Wifi peers unavailable.
-    changePeersUnavailable(connectionTypes.TCP_NATIVE);
-    if (networkChangedValue.bluetooth === 'off') {
-      // If Wifi and bluetooth is off, we know we can't talk to peers over
-      // over MPCF so marking them unavailable.
-      changePeersUnavailable(connectionTypes.MULTI_PEER_CONNECTIVITY_FRAMEWORK);
-    }
-  }
   if (networkChangedValue.bluetooth === 'off' &&
-      networkChangedValue.bluetoothLowEnergy === 'off') {
+    networkChangedValue.bluetoothLowEnergy === 'off') {
     // If both Bluetooth and BLE are off, we mark Android peers unavailable.
     changePeersUnavailable(connectionTypes.BLUETOOTH);
   }
-  var radioEnabled = false;
-  Object.keys(networkChangedValue).forEach(function (key) {
-    if (networkChangedValue[key] === 'on') {
-      radioEnabled = true;
-    }
-  });
+
+  if (networkChangedValue.wifi === 'off' &&
+    networkChangedValue.bluetooth === 'off') {
+    // If WiFi and Bluetooth is off, we know we can't talk to peers over
+    // over MPCF so marking them unavailable.
+    changePeersUnavailable(connectionTypes.MULTI_PEER_CONNECTIVITY_FRAMEWORK);
+  }
+
+  if (networkChangedValue.wifi === 'off' ||
+    networkChangedValue.bssidName === null) {
+    // If WiFi is off or we are not connected to access point, we mark WiFi
+    // peers unavailable.
+    changePeersUnavailable(connectionTypes.TCP_NATIVE);
+  }
+
+  var radioEnabled =
+    networkChangedValue.wifi === 'on' ||
+    networkChangedValue.bluetooth === 'on' ||
+    networkChangedValue.bluetoothLowEnergy === 'on';
+
   if (!radioEnabled) {
     return;
   }
+
   // At least some radio was enabled so try to start
   // whatever can be potentially started.
   promiseResultSuccessOrFailure(module.exports.start())
