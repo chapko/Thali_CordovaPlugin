@@ -109,16 +109,27 @@ function getWifiOrNativeMethodByNetworkType (method, networkType) {
   }
 };
 
-function getInitialStates () {
-  return {
-    started: false,
-    listening: false,
-    advertising: false,
-    networkType: networkTypes.BOTH
-  };
+var thaliMobileStates = {
+  started: false,
+  listening: false,
+  advertising: false,
+  networkType: networkTypes.BOTH,
+
+  // used internally for restarting thaliMobile with correct arguments
+  startArguments: {
+    router: null,
+    pskIdToSecret: null,
+    networkType: null,
+  }
 };
 
-var thaliMobileStates = getInitialStates();
+function resetThaliMobileState () {
+  thaliMobileStates.started = false;
+  thaliMobileStates.listening = false;
+  thaliMobileStates.advertising = false;
+  thaliMobileStates.networkType = networkTypes.BOTH;
+};
+
 
 // TODO: move peer availability cache to the separate module
 var peerAvailabilities = {};
@@ -219,6 +230,9 @@ function start (router, pskIdToSecret, networkType) {
  */
 module.exports.start = function (router, pskIdToSecret, networkType) {
   return promiseQueue.enqueue(function (resolve, reject) {
+    thaliMobileStates.startArguments.router = router;
+    thaliMobileStates.startArguments.pskIdToSecret = pskIdToSecret;
+    thaliMobileStates.startArguments.networkType = networkType;
     start(router, pskIdToSecret, networkType).then(resolve, reject);
   });
 };
@@ -240,7 +254,7 @@ module.exports.isStarted = function () {
  */
 module.exports.stop = function () {
   return promiseQueue.enqueue(function (resolve) {
-    thaliMobileStates = getInitialStates();
+    resetThaliMobileState();
     removeAllAvailabilityWatchersFromPeers();
     Object.getOwnPropertyNames(connectionTypes)
       .forEach(function (connectionKey) {
@@ -1373,10 +1387,15 @@ function handleNetworkChanged (networkChangedValue) {
     return;
   }
 
-  // At least some radio was enabled so try to start
-  // whatever can be potentially started.
-  promiseResultSuccessOrFailure(module.exports.start())
-  .then(function () {
+  // At least some radio was enabled so try to start whatever can be potentially
+  // started as soon as possible.
+  var enqueuedStart = promiseQueue.enqueueAtTop(function (resolve, reject) {
+    var args = thaliMobileStates.startArguments;
+    start(args.router, args.pskIdToSecret, args.networkType)
+      .then(resolve, reject);
+  });
+
+  promiseResultSuccessOrFailure(enqueuedStart).then(function () {
     var checkErrors = function (operation, combinedResult) {
       Object.keys(combinedResult).forEach(function (resultType) {
         if (combinedResult[resultType] !== null) {
