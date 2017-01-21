@@ -66,6 +66,7 @@ var promiseResultSuccessOrFailure = function (promise) {
  */
 function ThaliWifiInfrastructure () {
   EventEmitter.call(this);
+
   this.peer = null;
   // Store previously used own peerIdentifiers so ssdp client can ignore some
   // delayed ssdp messages after our server has changed uuid part of usn
@@ -80,9 +81,7 @@ function ThaliWifiInfrastructure () {
   this.routerServerAddress = ip.address();
   this.routerServerErrorListener = null;
   this.pskIdToSecret = null;
-
   this.states = this._getInitialStates();
-
   this._init();
 }
 
@@ -101,7 +100,7 @@ ThaliWifiInfrastructure.prototype._init = function () {
   var clientOptions = {
     ssdpIp: thaliConfig.SSDP_IP,
     thaliLogger: require('../ThaliLogger')('nodeSSDPClientLogger')
-  }
+  };
 
   this._client = new nodessdp.Client(clientOptions);
 
@@ -773,4 +772,82 @@ ThaliWifiInfrastructure.prototype.getNetworkStatus = function () {
   return thaliMobileNativeWrapper.getNonTCPNetworkStatus();
 };
 
-module.exports = ThaliWifiInfrastructure;
+function WifiWrapper() {
+  this.wifi = new ThaliWifiInfrastructure();
+
+  [
+    'on',
+    'once',
+    'removeListener',
+    'removeAllListeners',
+    'emit',
+    'getNetworkStatus',
+  ].forEach(function (methodName) {
+    this[methodName] = this.wifi[methodName].bind(this.wifi);
+  }, this);
+}
+
+WifiWrapper.prototype.getCurrentState = function () {
+  return {
+    started: this.wifi.states.started,
+    listening: this.wifi.states.listening.current,
+    advertising: this.wifi.states.advertising.current,
+  };
+};
+
+WifiWrapper.prototype.getTargetState = function () {
+  return {
+    listening: this.wifi.states.listening.target,
+    advertising: this.wifi.states.advertising.target,
+  };
+};
+
+WifiWrapper.prototype.getCurrentPeer = function () {
+  return this.wifi.peer;
+};
+
+WifiWrapper.prototype.getServer = function () {
+  return this.wifi._server;
+};
+
+WifiWrapper.prototype.getClient = function () {
+  return this.wifi._client;
+};
+
+WifiWrapper.prototype.overrideAdvertisedPort = function (port) {
+  this.wifi.advertisedPortOverride = port;
+};
+
+WifiWrapper.prototype.restoreAdvertisedPort = function () {
+  this.wifi.advertisedPortOverride = null;
+};
+
+WifiWrapper.prototype.getOverridenAdvertisedPort = function () {
+  return this.wifi.advertisedPortOverride;
+};
+
+WifiWrapper.prototype.start = function (router, pskIdToSecret) {
+  return this.wifi.start(router, pskIdToSecret);
+};
+
+WifiWrapper.prototype.startListeningForAdvertisements = function () {
+  return this.wifi.startListeningForAdvertisements();
+};
+
+WifiWrapper.prototype.stopListeningForAdvertisements = function () {
+  return this.wifi.stopListeningForAdvertisements();
+};
+
+WifiWrapper.prototype.startUpdateAdvertisingAndListening = function () {
+  return this.wifi.startUpdateAdvertisingAndListening();
+};
+
+WifiWrapper.prototype.stopAdvertisingAndListening = function () {
+  return this.wifi.stopAdvertisingAndListening();
+};
+
+WifiWrapper.prototype.stop = function () {
+  return this.wifi.stop();
+};
+
+module.exports = WifiWrapper;
