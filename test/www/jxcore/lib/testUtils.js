@@ -18,10 +18,6 @@ var notificationBeacons = require('thali/NextGeneration/notification/thaliNotifi
 var express = require('express');
 var fs = require('fs-extra-promise');
 
-Promise.config({
-  cancellation: true
-});
-
 var pskId = 'yo ho ho';
 var pskKey = new Buffer('Nothing going on here');
 

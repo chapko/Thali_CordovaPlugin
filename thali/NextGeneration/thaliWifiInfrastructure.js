@@ -5,7 +5,7 @@ var inherits = require('util').inherits;
 var https = require('https');
 var url = require('url');
 
-var Promise = require('lie');
+var Promise = require('bluebird');
 var nodessdp = require('node-ssdp');
 var ip = require('ip');
 var uuid = require('uuid');
@@ -94,16 +94,22 @@ ThaliWifiInfrastructure.prototype._init = function () {
     udn: thaliConfig.SSDP_NT,
     thaliLogger: require('../ThaliLogger')('nodeSSDPServerLogger')
   };
-  this._server = new nodessdp.Server(serverOptions);
-  this._setLocation();
-
   var clientOptions = {
     ssdpIp: thaliConfig.SSDP_IP,
     thaliLogger: require('../ThaliLogger')('nodeSSDPClientLogger')
   };
+  var promisifyOptions = {
+    filter: function (methodName) {
+      return methodName === 'start' || methodName === 'stop';
+    }
+  };
 
+  this._server = new nodessdp.Server(serverOptions);
   this._client = new nodessdp.Client(clientOptions);
+  Promise.promisifyAll(this._server, promisifyOptions);
+  Promise.promisifyAll(this._client, promisifyOptions);
 
+  this._setLocation();
   this._client.on('advertise-alive', function (data) {
     this._handleMessage(data, true);
   }.bind(this));
@@ -237,7 +243,7 @@ ThaliWifiInfrastructure.prototype._isOwnMessage = function (data) {
   }
 };
 
-ThaliWifiInfrastructure.prototype._rejectPerWifiState = function (reject) {
+ThaliWifiInfrastructure.prototype._rejectPerWifiState = function () {
   var errorMessage;
   switch (this.states.networkState.wifi) {
     case 'off': {
@@ -254,7 +260,7 @@ ThaliWifiInfrastructure.prototype._rejectPerWifiState = function (reject) {
       errorMessage = 'Unspecified Error with Radio infrastructure';
     }
   }
-  return reject(new Error(errorMessage));
+  return Promise.reject(new Error(errorMessage));
 };
 
 ThaliWifiInfrastructure.prototype._updateStatus = function () {
@@ -287,14 +293,13 @@ ThaliWifiInfrastructure.prototype._updateStatus = function () {
  */
 ThaliWifiInfrastructure.prototype.start = function (router, pskIdToSecret) {
   var self = this;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (self.states.started === true) {
-      return reject(new Error('Call Stop!'));
-    }
-    self.pskIdToSecret = pskIdToSecret;
-    thaliMobileNativeWrapper.emitter.on('networkChangedNonTCP',
-                                          self._networkChangedHandler);
-    thaliMobileNativeWrapper.getNonTCPNetworkStatus()
+  if (self.states.started === true) {
+    return Promise.reject(new Error('Call Stop!'));
+  }
+  self.pskIdToSecret = pskIdToSecret;
+  thaliMobileNativeWrapper.emitter.on('networkChangedNonTCP',
+                                        self._networkChangedHandler);
+  return thaliMobileNativeWrapper.getNonTCPNetworkStatus()
     .then(function (networkStatus) {
       if (self.states.networkState === null) {
         // Only assign the network state received here if it
@@ -305,9 +310,7 @@ ThaliWifiInfrastructure.prototype.start = function (router, pskIdToSecret) {
       }
       self.states.started = true;
       self.router = router;
-      return resolve();
     });
-  });
 };
 
 /**
@@ -323,26 +326,23 @@ ThaliWifiInfrastructure.prototype.start = function (router, pskIdToSecret) {
  */
 ThaliWifiInfrastructure.prototype.stop = function () {
   var self = this;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (self.states.started === false) {
-      return resolve();
-    }
-    self.states.stopping = true;
-    self._stopAdvertisingAndListening(true, true)
+  if (self.states.started === false) {
+    return Promise.resolve();
+  }
+  self.states.stopping = true;
+  return self._stopAdvertisingAndListening(true, true)
     .then(function () {
       return self._stopListeningForAdvertisements(true, true);
     })
     .then(function () {
       self.states = self._getInitialStates();
-      thaliMobileNativeWrapper.emitter.removeListener('networkChangedNonTCP',
-        self._networkChangedHandler);
-      return resolve();
+      thaliMobileNativeWrapper.emitter
+        .removeListener('networkChangedNonTCP', self._networkChangedHandler);
     })
     .catch(function (error) {
       self.states.stopping = false;
-      reject(error);
+      return Promise.reject(error);
     });
-  });
 };
 
 /* eslint-disable max-len */
@@ -373,35 +373,26 @@ ThaliWifiInfrastructure.prototype.stop = function () {
 ThaliWifiInfrastructure.prototype.startListeningForAdvertisements =
 function () {
   var self = this;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (!self.states.started) {
-      return reject(new Error('Call Start!'));
-    }
+  if (!self.states.started) {
+    return Promise.reject(new Error('Call Start!'));
+  }
 
-    self.states.listening.target = true;
+  self.states.listening.target = true;
 
-    if (self.states.listening.current) {
-      return resolve();
-    }
-    if (self.states.networkState.wifi === 'on') {
-      self._client.start(function () {
-        self.states.listening.current = true;
-        self._updateStatus();
-        if (platform.isAndroid) {
-          return thaliMobileNativeWrapper.lockAndroidWifiMulticast()
-            .then(function () {
-              resolve();
-            })
-            .catch(function (err) {
-              reject(err);
-            });
-        }
-        return resolve();
-      });
-    } else {
-      return self._rejectPerWifiState(reject);
-    }
-  });
+  if (self.states.listening.current) {
+    return Promise.resolve();
+  }
+  if (self.states.networkState.wifi === 'on') {
+    return self._client.startAsync().then(function () {
+      self.states.listening.current = true;
+      self._updateStatus();
+      if (platform.isAndroid) {
+        return thaliMobileNativeWrapper.lockAndroidWifiMulticast();
+      }
+    });
+  } else {
+    return self._rejectPerWifiState();
+  }
 };
 
 /**
@@ -427,7 +418,18 @@ function () {
  */
 ThaliWifiInfrastructure.prototype.stopListeningForAdvertisements =
 function () {
-  return this._stopListeningForAdvertisements(false, true);
+  var self = this;
+  self.states.listening.target = false;
+  if (!self.states.listening.current) {
+    return Promise.resolve();
+  }
+  return self._client.stopAsync().then(function () {
+    self.states.listening.current = false;
+    self._updateStatus();
+    if (platform.isAndroid) {
+      return thaliMobileNativeWrapper.unlockAndroidWifiMulticast();
+    }
+  });
 };
 
 ThaliWifiInfrastructure.prototype._stopListeningForAdvertisements =
@@ -546,7 +548,7 @@ function () {
     var usn = USN.stringify(self.peer);
 
     if (self.states.networkState.wifi !== 'on') {
-      return self._rejectPerWifiState(reject);
+      return self._rejectPerWifiState().catch(reject);
     }
 
     if (self.states.advertising.current) {
@@ -827,15 +829,21 @@ WifiWrapper.prototype.getOverridenAdvertisedPort = function () {
 };
 
 WifiWrapper.prototype.start = function (router, pskIdToSecret) {
-  return this.wifi.start(router, pskIdToSecret);
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.start(router, pskIdToSecret).then(resolve, reject);
+  }.bind(this));
 };
 
 WifiWrapper.prototype.startListeningForAdvertisements = function () {
-  return this.wifi.startListeningForAdvertisements();
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.startListeningForAdvertisements().then(resolve, reject);
+  }.bind(this));
 };
 
 WifiWrapper.prototype.stopListeningForAdvertisements = function () {
-  return this.wifi.stopListeningForAdvertisements();
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopListeningForAdvertisements().then(resolve, reject);
+  }.bind(this));
 };
 
 WifiWrapper.prototype.startUpdateAdvertisingAndListening = function () {
@@ -847,7 +855,9 @@ WifiWrapper.prototype.stopAdvertisingAndListening = function () {
 };
 
 WifiWrapper.prototype.stop = function () {
-  return this.wifi.stop();
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stop().then(resolve, reject);
+  }.bind(this));
 };
 
 module.exports = WifiWrapper;
