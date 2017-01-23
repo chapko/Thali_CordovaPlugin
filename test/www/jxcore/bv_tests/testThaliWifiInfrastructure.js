@@ -258,7 +258,7 @@ test('Delayed own message are still ignored after advertisement has been ' +
     var capturedMessages = [];
 
     sandbox.stub(
-      wifiInfrastructure.getServer(),
+      wifiInfrastructure.getSSDPServer(),
       '_send',
       function (message) {
         // _parseMessage fires 'advertise-alive/bye' events

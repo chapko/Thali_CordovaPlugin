@@ -43,8 +43,8 @@ test(
     }
 
     var wifiInfrastructure = new ThaliWifiInfrastructure();
-    var serverStartSpy = sinon.spy(wifiInfrastructure.getServer(), 'start');
-    var serverStopSpy  = sinon.spy(wifiInfrastructure.getServer(), 'stop');
+    var serverStartSpy = sinon.spy(wifiInfrastructure.getSSDPServer(), 'start');
+    var serverStopSpy  = sinon.spy(wifiInfrastructure.getSSDPServer(), 'stop');
 
     wifiInfrastructure.start(express.Router(), pskIdToSecret)
       .then(function () {

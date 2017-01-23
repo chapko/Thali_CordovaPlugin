@@ -597,7 +597,7 @@ lock(function thaliWifiStartUpdateAdvertisingAndListening () {
     // byebye is issued for the old USN and alive message for the new one.
     return self._server.stopAsync().then(startSSDPServer);
   } else {
-    return self.setUpExpressApp()
+    return self._setUpExpressApp()
       .then(startSSDPServer)
       .then(function () {
         self.states.advertising.current = true;
@@ -606,7 +606,7 @@ lock(function thaliWifiStartUpdateAdvertisingAndListening () {
   }
 });
 
-ThaliWifiInfrastructure.prototype.setUpExpressApp = function () {
+ThaliWifiInfrastructure.prototype._setUpExpressApp = function () {
   var self = this;
   self.expressApp = express();
   try {
@@ -709,7 +709,26 @@ ThaliWifiInfrastructure.prototype._updateOwnPeer = function () {
  */
 ThaliWifiInfrastructure.prototype.stopAdvertisingAndListening =
 lock(function thaliWifiStopAdvertisingAndListening () {
-  return this._stopAdvertisingAndListening(false, true);
+  var self = this;
+  self.states.advertising.target = false;
+
+  if (!self.states.advertising.current) {
+    return Promise.resolve();
+  }
+  return self._server.stopAsync().then(function () {
+    self.peer = null;
+    return self.routerServer.closeAllPromise();
+  }).then(function () {
+    // The port needs to be reset, because
+    // otherwise there is no guarantee that
+    // the same port is available next time
+    // we start the router server.
+    self.routerServerPort = 0;
+    self.routerServer.removeListener('error', self.routerServerErrorListener);
+    self.routerServer = null;
+    self.states.advertising.current = false;
+    self._updateStatus();
+  });
 });
 
 ThaliWifiInfrastructure.prototype._stopAdvertisingAndListening =
@@ -865,11 +884,11 @@ WifiWrapper.prototype.getCurrentPeer = function () {
   return this.wifi.peer;
 };
 
-WifiWrapper.prototype.getServer = function () {
+WifiWrapper.prototype.getSSDPServer = function () {
   return this.wifi._server;
 };
 
-WifiWrapper.prototype.getClient = function () {
+WifiWrapper.prototype.getSSDPClient = function () {
   return this.wifi._client;
 };
 
@@ -910,7 +929,9 @@ WifiWrapper.prototype.startUpdateAdvertisingAndListening = function () {
 };
 
 WifiWrapper.prototype.stopAdvertisingAndListening = function () {
-  return this.wifi.stopAdvertisingAndListening();
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
 };
 
 WifiWrapper.prototype.stop = function () {
