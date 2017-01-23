@@ -222,7 +222,7 @@ ThaliWifiInfrastructure.prototype._handleMessage = function (data, available) {
     peer.hostAddress = peer.portNumber = null;
   }
 
-  logger.debug('Emitting wifiPeerAvailabilityChanged ' + JSON.stringify(peer));
+  // logger.debug('Emitting wifiPeerAvailabilityChanged ' + JSON.stringify(peer));
   this.emit('wifiPeerAvailabilityChanged', peer);
   return true;
 };
@@ -532,90 +532,106 @@ function (skipPromiseQueue, changeTarget) {
 ThaliWifiInfrastructure.prototype.startUpdateAdvertisingAndListening =
 function () {
   var self = this;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (!self.states.started) {
-      return reject(new Error('Call Start!'));
-    }
-    if (!self.router) {
-      return reject(new Error('Bad Router'));
-    }
+  if (!self.states.started) {
+    return Promise.reject(new Error('Call Start!'));
+  }
+  if (!self.router) {
+    return Promise.reject(new Error('Bad Router'));
+  }
 
-    self.states.advertising.target = true;
+  self.states.advertising.target = true;
 
+  if (self.states.networkState.wifi !== 'on') {
+    return self._rejectPerWifiState();
+  }
 
+  function startSSDPServer () {
     self._updateOwnPeer();
-
     var usn = USN.stringify(self.peer);
+    self._server.setUSN(usn);
+    return self._server.startAsync();
+  }
 
-    if (self.states.networkState.wifi !== 'on') {
-      return self._rejectPerWifiState().catch(reject);
-    }
-
-    if (self.states.advertising.current) {
-      // If we were already advertising, we need to restart the server
-      // so that a byebye is issued for the old USN and and alive
-      // message for the new one.
-      self._server.stop(function () {
-        self._server.setUSN(usn);
-        self._server.start(function () {
-          return resolve();
-        });
+  if (self.states.advertising.current) {
+    // If we were already advertising, we need to restart the server so that a
+    // byebye is issued for the old USN and alive message for the new one.
+    return self._server.stopAsync().then(startSSDPServer);
+  } else {
+    return self.setUpExpressApp()
+      .then(startSSDPServer)
+      .then(function () {
+        self.states.advertising.current = true;
+        self._updateStatus();
       });
-    } else {
-      self.expressApp = express();
-      try {
-        self.expressApp.use('/', self.router);
-      } catch (error) {
-        logger.error('Unable to use the given router: %s', error.toString());
-        return reject(new Error('Bad Router'));
-      }
-      var startErrorListener = function (error) {
-        logger.error('Router server emitted an error: %s', error.toString());
-        self.routerServer.removeListener('error', startErrorListener);
-        self.routerServer = null;
-        reject(new Error('Unspecified Error with Radio infrastructure'));
-      };
-      self.routerServerErrorListener = function (error) {
-        // Error is only logged, because it was determined this should
-        // not occur in normal use cases and it wasn't worthwhile to
-        // specify a custom error that the upper layers should listen to.
-        // If this error is seen in real scenario, a proper error handling
-        // should be specified and implemented.
-        logger.error('Router server emitted an error: %s', error.toString());
-      };
-      var listeningHandler = function () {
-        self.routerServerPort = self.routerServer.address().port;
-        logger.debug('listening', self.routerServerPort);
+  }
+};
 
-        self._server.setUSN(usn);
-        // We need to update the location string, because the port
-        // may have changed when we re-start the router server.
-        self._setLocation();
-        self._server.start(function () {
-          // Remove the error listener we had during the resolution of this
-          // promise and add one that is listening for errors that may
-          // occur any time.
-          self.routerServer.removeListener('error', startErrorListener);
-          self.routerServer.on('error', self.routerServerErrorListener);
-          self.states.advertising.current = true;
-          self._updateStatus();
-          return resolve();
-        });
-      };
-      var options = {
-        ciphers: thaliConfig.SUPPORTED_PSK_CIPHERS,
-        pskCallback: function (id) {
-          return self.pskIdToSecret(id);
-        },
-        key: thaliConfig.BOGUS_KEY_PEM,
-        cert: thaliConfig.BOGUS_CERT_PEM
-      };
-      self.routerServer = https.createServer(options, self.expressApp)
-        .listen(self.routerServerPort, listeningHandler);
-      self.routerServer = makeIntoCloseAllServer(self.routerServer);
-      self.routerServer.on('error', startErrorListener);
-    }
-  });
+ThaliWifiInfrastructure.prototype.setUpExpressApp = function () {
+  var self = this;
+  self.expressApp = express();
+  try {
+    self.expressApp.use('/', self.router);
+  } catch (error) {
+    logger.error('Unable to use the given router: %s', error.toString());
+    return Promise.reject(new Error('Bad Router'));
+  }
+
+  self.routerServerErrorListener = function (error) {
+    // Error is only logged, because it was determined this should
+    // not occur in normal use cases and it wasn't worthwhile to
+    // specify a custom error that the upper layers should listen to.
+    // If this error is seen in real scenario, a proper error handling
+    // should be specified and implemented.
+    logger.error('Router server emitted an error: %s', error.toString());
+  };
+
+  var options = {
+    ciphers: thaliConfig.SUPPORTED_PSK_CIPHERS,
+    pskCallback: function (id) {
+      return self.pskIdToSecret(id);
+    },
+    key: thaliConfig.BOGUS_KEY_PEM,
+    cert: thaliConfig.BOGUS_CERT_PEM
+  };
+
+  function listen (server, port) {
+    return new Promise(function (resolve, reject) {
+      function onError (error) {
+        reject(error); cleanup();
+      }
+      function onListening () {
+        resolve(); cleanup();
+      }
+      function cleanup () {
+        server.removeListener('error', onError);
+        server.removeListener('listening', onListening);
+      }
+      server.on('error', onError);
+      server.on('listening', onListening);
+      server.listen(port);
+    });
+  }
+
+  self.routerServer = https.createServer(options, self.expressApp);
+  self.routerServer = makeIntoCloseAllServer(self.routerServer);
+  return listen(self.routerServer, self.routerServerPort)
+    .catch(function (listenError) {
+      logger.error(
+        'Router server emitted an error: %s',
+        listenError.toString()
+      );
+      self.routerServer = null;
+      var error = new Error('Unspecified Error with Radio infrastructure');
+      return Promise.reject(error);
+    })
+    .then(function () {
+      self.routerServerPort = self.routerServer.address().port;
+      logger.debug('listening', self.routerServerPort);
+      self.routerServer.on('error', self.routerServerErrorListener);
+      // We need to update the location string, because the port
+      // may have changed when we re-start the router server.
+      self._setLocation();
+    });
 };
 
 ThaliWifiInfrastructure.prototype._updateOwnPeer = function () {
@@ -776,6 +792,7 @@ ThaliWifiInfrastructure.prototype.getNetworkStatus = function () {
 
 function WifiWrapper() {
   this.wifi = new ThaliWifiInfrastructure();
+  this.wifi.wrapper = this;
 
   [
     'on',
@@ -847,7 +864,9 @@ WifiWrapper.prototype.stopListeningForAdvertisements = function () {
 };
 
 WifiWrapper.prototype.startUpdateAdvertisingAndListening = function () {
-  return this.wifi.startUpdateAdvertisingAndListening();
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.startUpdateAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
 };
 
 WifiWrapper.prototype.stopAdvertisingAndListening = function () {
