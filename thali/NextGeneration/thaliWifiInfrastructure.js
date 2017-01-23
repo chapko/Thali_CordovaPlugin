@@ -21,13 +21,14 @@ var platform = require('./utils/platform');
 
 var promiseQueue = new PromiseQueue();
 
-var promiseResultSuccessOrFailure = function (promise) {
-  return promise.then(function (success) {
-    return success;
-  }).catch(function (failure) {
-    return failure;
-  });
-};
+var muteRejection = (function () {
+  function returnNull () { return null; }
+  function returnArg (arg) { return arg; }
+
+  return function muteRejection (promise) {
+    return promise.then(returnNull).catch(returnArg);
+  };
+}());
 
 function createLocker (debug) {
   var locked = false;
@@ -153,10 +154,6 @@ ThaliWifiInfrastructure.prototype._init = function () {
   this._client.on('advertise-bye', function (data) {
     this._handleMessage(data, false);
   }.bind(this));
-
-  this._networkChangedHandler = function (networkChangedValue) {
-    this._handleNetworkChanges(networkChangedValue);
-  }.bind(this);
 };
 
 ThaliWifiInfrastructure.prototype._getInitialStates = function () {
@@ -173,52 +170,6 @@ ThaliWifiInfrastructure.prototype._getInitialStates = function () {
     },
     networkState: null
   };
-};
-
-ThaliWifiInfrastructure.prototype._handleNetworkChanges =
-function (networkChangedValue) {
-  var self = this;
-  // If we are stopping or the wifi state hasn't changed,
-  // we are not really interested.
-  if (self.states.stopping === true ||
-      (self.states.networkState !== null &&
-      networkChangedValue.wifi === self.states.networkState.wifi)) {
-    return;
-  }
-  self.states.networkState = networkChangedValue;
-  var actionList = [];
-  if (self.states.networkState.wifi === 'on') {
-    // If the wifi state turned on, try to get into the target states
-    if (self.states.listening.target) {
-      actionList.push(promiseResultSuccessOrFailure(
-        self.wrapper.startListeningForAdvertisements())
-      );
-    }
-    if (self.states.advertising.target) {
-      actionList.push(promiseResultSuccessOrFailure(
-        self.wrapper.startUpdateAdvertisingAndListening())
-      );
-    }
-  } else {
-    // If wifi didn't turn on, it was turned into a state where we want
-    // to stop our actions
-    actionList = [
-      promiseResultSuccessOrFailure(
-        self._stopAdvertisingAndListening(false, false)
-      ),
-      promiseResultSuccessOrFailure(
-        self._stopListeningForAdvertisements(false, false)
-      )
-    ];
-  }
-  Promise.all(actionList).then(function (results) {
-    results.forEach(function (result) {
-      if (result) {
-        logger.warn('Error when reacting to wifi state changes: %s',
-                    result.toString());
-      }
-    });
-  });
 };
 
 ThaliWifiInfrastructure.prototype._setLocation = function () {
@@ -336,8 +287,6 @@ lock(function thaliWifiStart (router, pskIdToSecret) {
     return Promise.reject(new Error('Call Stop!'));
   }
   self.pskIdToSecret = pskIdToSecret;
-  thaliMobileNativeWrapper.emitter.on('networkChangedNonTCP',
-                                        self._networkChangedHandler);
   return thaliMobileNativeWrapper.getNonTCPNetworkStatus()
     .then(function (networkStatus) {
       if (self.states.networkState === null) {
@@ -376,8 +325,6 @@ lock(function thaliWifiStop () {
     })
     .then(function () {
       self.states = self._getInitialStates();
-      thaliMobileNativeWrapper.emitter
-        .removeListener('networkChangedNonTCP', self._networkChangedHandler);
     })
     .catch(function (error) {
       self.states.stopping = false;
@@ -853,6 +800,16 @@ function WifiWrapper() {
   this.wifi = new ThaliWifiInfrastructure();
   this.wifi.wrapper = this;
 
+  this._isStarted = false;
+  this._isAdvertising = false;
+  this._isListening = false;
+
+  this._lastNetworkState = null;
+
+  this._networkChangedHandler = function (networkChangedValue) {
+    this._handleNetworkChanges(networkChangedValue);
+  }.bind(this);
+
   [
     'on',
     'once',
@@ -864,6 +821,56 @@ function WifiWrapper() {
     this[methodName] = this.wifi[methodName].bind(this.wifi);
   }, this);
 }
+
+WifiWrapper.prototype._handleNetworkChanges =
+function (networkState) {
+  var self = this;
+  // If we are stopping or the wifi state hasn't changed,
+  // we are not really interested.
+
+  var isWifiUnchanged = this._lastNetworkState &&
+      networkState.wifi === self.states.networkState.wifi;
+
+  if (self._isStarted || isWifiUnchanged) {
+    return;
+  }
+
+  this._lastNetworkState = networkState;
+
+  var actionResults = [];
+  if (networkState.wifi === 'on') {
+    // If the wifi state turned on, try to get into the target states
+    if (this._isListening) {
+      actionResults.push(
+        muteRejection(self.startListeningForAdvertisements())
+      );
+    }
+    if (self.states.advertising.target) {
+      actionResults.push(
+        muteRejection(self.wrapper.startUpdateAdvertisingAndListening())
+      );
+    }
+  } else {
+    // If wifi didn't turn on, it was turned into a state where we want
+    // to stop our actions
+    actionResults.push(
+      muteRejection(
+        self._pauseAdvertisingAndListening()
+      ),
+      muteRejection(
+        self._pauseListeningForAdvertisements()
+      )
+    );
+  }
+  Promise.all(actionList).then(function (results) {
+    results.forEach(function (result) {
+      if (result) {
+        logger.warn('Error when reacting to wifi state changes: %s',
+                    result.toString());
+      }
+    });
+  });
+};
 
 WifiWrapper.prototype.getCurrentState = function () {
   return {
@@ -905,6 +912,9 @@ WifiWrapper.prototype.getOverridenAdvertisedPort = function () {
 };
 
 WifiWrapper.prototype.start = function (router, pskIdToSecret) {
+  thaliMobileNativeWrapper.emitter
+    .on('networkChangedNonTCP', this._networkChangedHandler);
+
   return promiseQueue.enqueue(function (resolve, reject) {
     this.wifi.start(router, pskIdToSecret).then(resolve, reject);
   }.bind(this));
@@ -922,6 +932,12 @@ WifiWrapper.prototype.stopListeningForAdvertisements = function () {
   }.bind(this));
 };
 
+WifiWrapper.prototype._pauseListeningForAdvertisements = function () {
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
+};
+
 WifiWrapper.prototype.startUpdateAdvertisingAndListening = function () {
   return promiseQueue.enqueue(function (resolve, reject) {
     this.wifi.startUpdateAdvertisingAndListening().then(resolve, reject);
@@ -934,7 +950,15 @@ WifiWrapper.prototype.stopAdvertisingAndListening = function () {
   }.bind(this));
 };
 
+WifiWrapper.prototype._pauseAdvertisingAndListening = function () {
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
+};
+
 WifiWrapper.prototype.stop = function () {
+  thaliMobileNativeWrapper.emitter
+    .removeListener('networkChangedNonTCP', this._networkChangedHandler);
   return promiseQueue.enqueue(function (resolve, reject) {
     this.wifi.stop().then(resolve, reject);
   }.bind(this));
