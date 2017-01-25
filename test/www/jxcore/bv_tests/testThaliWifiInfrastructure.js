@@ -637,14 +637,9 @@ test('functions are run from a queue in the right order', function (t) {
   var firstSpy = sinon.spy();
   var secondSpy = sinon.spy();
   var thirdSpy = sinon.spy();
-  wifiInfrastructure.startUpdateAdvertisingAndListening()
-  .then(function () {
-    firstSpy();
-  });
-  wifiInfrastructure.stop()
-  .then(function () {
-    secondSpy();
-  });
+  wifiInfrastructure.startUpdateAdvertisingAndListening().then(firstSpy);
+  wifiInfrastructure.stop().then(secondSpy);
+
   wifiInfrastructure.start()
   .then(function () {
     thirdSpy();
@@ -662,20 +657,30 @@ if (platform._isRealMobile) {
 }
 
 test('network changes are ignored while stopping', function (t) {
+  var realNetworkStatus = null;
+  var wifiOffNetworkStatus = {
+    wifi: 'off',
+  };
+  var spy = null;
   wifiInfrastructure.startListeningForAdvertisements()
-  .then(function () {
-    wifiInfrastructure.wifi.states.stopping = true;
-    var spy = sinon.spy(wifiInfrastructure, 'startListeningForAdvertisements');
-    testUtils.toggleWifi(false)
     .then(function () {
-      return testUtils.toggleWifi(true);
+      return ThaliMobileNativeWrapper.getNonTCPNetworkStatus();
     })
-    .then(function () {
+    .then(function (networkStatus) {
+      realNetworkStatus = networkStatus;
+      wifiInfrastructure._isStarted = false;
+      spy = sinon.spy(wifiInfrastructure, 'startListeningForAdvertisements');
+      ThaliMobileNativeWrapper.emitter
+        .emit('networkChangedNonTCP', wifiOffNetworkStatus);
+      ThaliMobileNativeWrapper.emitter
+        .emit('networkChangedNonTCP', realNetworkStatus);
+      return Promise.delay(0);
+    }).then(function () {
       t.equals(spy.callCount, 0, 'should not be called');
       wifiInfrastructure.startListeningForAdvertisements.restore();
+      wifiInfrastructure._isStarted = true;
       t.end();
     });
-  });
 });
 
 var tryStartingFunctionWhileWifiOff = function (t, functionName, keyName) {

@@ -30,15 +30,14 @@ module.exports.getPromiseQueue = function () {
   return promiseQueue;
 };
 
-function promiseResultSuccessOrFailure (promise) {
-  return promise.then(function (success) {
-    return success;
-  }).catch(function (failure) {
-    // This turns the catch into a normal 'then' response so no matter
-    // what the promise outputs the result will always be a resolve
-    return failure;
-  });
-}
+var muteRejection = (function () {
+  function returnNull () { return null; }
+  function returnArg (arg) { return arg; }
+
+  return function muteRejection (promise) {
+    return promise.then(returnNull).catch(returnArg);
+  };
+}());
 
 function getCombinedResult (results) {
   return {
@@ -67,7 +66,7 @@ function getMethodIfExists (target, method) {
   }
   return function () {
     var args = arguments;
-    return promiseResultSuccessOrFailure(target[method].apply(target, args));
+    return muteRejection(target[method].apply(target, args));
   };
 }
 
@@ -1438,7 +1437,7 @@ function handleNetworkChanged (networkChangedValue) {
       .then(resolve, reject);
   });
 
-  promiseResultSuccessOrFailure(enqueuedStart).then(function () {
+  muteRejection(enqueuedStart).then(function () {
     var checkErrors = function (operation, combinedResult) {
       Object.keys(combinedResult).forEach(function (resultType) {
         if (combinedResult[resultType] !== null) {
