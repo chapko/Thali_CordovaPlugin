@@ -233,12 +233,12 @@ test('messages with invalid location or USN should be ignored', function (t) {
     USN: usn,
     LOCATION: 'http://foo.bar:90000'
   };
-  var handledMessage = wifiInfrastructure.wifi
+  var handledMessage = wifiInfrastructure.listener
     ._handleMessage(testMessage, true);
   t.equals(handledMessage, false, 'should not have emitted with invalid port');
   testMessage.USN = 'foobar';
   testMessage.LOCATION = 'http://foo.bar:50000';
-  handledMessage = wifiInfrastructure.wifi._handleMessage(testMessage, true);
+  handledMessage = wifiInfrastructure.listener._handleMessage(testMessage, true);
   t.equals(handledMessage, false, 'should not have emitted with invalid USN');
   t.end();
 });
@@ -292,7 +292,7 @@ test('Delayed own message are still ignored after advertisement has been ' +
   captureMessages(function (messages) {
     sandbox.restore();
     var allMessagesIgnored = messages.every(function (message) {
-      return !wifiInfrastructure.wifi._handleMessage(message);
+      return !wifiInfrastructure.listener._handleMessage(message);
     });
     t.ok(allMessagesIgnored, 'all captured messages are not handled');
     t.end();
@@ -311,7 +311,7 @@ function (t) {
     USN: usn
   };
   t.equal(
-    wifiInfrastructure.wifi._shouldBeIgnored(irrelevantNTMessage),
+    wifiInfrastructure.listener._shouldBeIgnored(irrelevantNTMessage),
     true,
     'messages with irrelevant NT should be ignored'
   );
@@ -323,7 +323,7 @@ function (t) {
     USN: usn
   };
   t.equal(
-    wifiInfrastructure.wifi._shouldBeIgnored(relevantMessage),
+    wifiInfrastructure.listener._shouldBeIgnored(relevantMessage),
     false,
     'relevant messages should not be ignored'
   );
@@ -397,7 +397,7 @@ test('#startUpdateAdvertisingAndListening should fail invalid router has ' +
 test('#startUpdateAdvertisingAndListening should fail if router server ' +
 'starting fails', function (t) {
   // Save the old port so that it can be reassigned after the test.
-  var oldPort = wifiInfrastructure.wifi.routerServerPort;
+  var oldPort = wifiInfrastructure.advertiser.routerServerPort;
   // Create a test server that is used to block the port
   // onto which the router server is tried to be started.
   var testServer = net.createServer(function () {
@@ -409,12 +409,12 @@ test('#startUpdateAdvertisingAndListening should fail if router server ' +
     // have our test server running. This should
     // create a failure when trying to start the router
     // server on the same port.
-    wifiInfrastructure.wifi.routerServerPort = testServerPort;
+    wifiInfrastructure.advertiser.routerServerPort = testServerPort;
     wifiInfrastructure.startUpdateAdvertisingAndListening()
     .catch(function (error) {
       t.equals(error.message, 'Unspecified Error with Radio infrastructure',
         'specific error expected');
-      wifiInfrastructure.wifi.routerServerPort = oldPort;
+      wifiInfrastructure.advertiser.routerServerPort = oldPort;
       testServer.close(function () {
         t.end();
       });
@@ -439,7 +439,7 @@ test('#startUpdateAdvertisingAndListening should start hosting given router ' +
   .then(function () {
     https.get({
       path: testPath,
-      port: wifiInfrastructure.wifi.routerServerPort,
+      port: wifiInfrastructure.advertiser.routerServerPort,
       agent: false, // to prevent connection keep-alive,
       pskIdentity: pskIdentity,
       pskKey: pskKey
@@ -467,7 +467,7 @@ test('#startUpdateAdvertisingAndListening bad psk should be rejected ' +
     .then(function () {
       var httpRequest = https.get({
         path: testPath,
-        port: wifiInfrastructure.wifi.routerServerPort,
+        port: wifiInfrastructure.advertiser.routerServerPort,
         agent: false, // to prevent connection keep-alive,
         pskIdentity: pskIdentity,
         pskKey: pskKey
