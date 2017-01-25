@@ -89,21 +89,7 @@ var lock = createLocker(true);
  */
 
 
-/**
- * This creates an object to manage a WiFi instance. During production we will
- * have exactly one instance running but for testing purposes it's very useful
- * to be able to run multiple instances. So long as the SSDP code uses a
- * different port to advertise for responses for each instance and as the router
- * instances are already specified to use whatever ports are available the
- * different instances should not run into each other.
- *
- * @public
- * @constructor
- * @fires event:wifiPeerAvailabilityChanged
- * @fires event:networkChangedWifi
- * @fires discoveryAdvertisingStateUpdateWifiEvent
- */
-function ThaliWifiInfrastructure () {
+function WifiListenerAdvertiser () {
   EventEmitter.call(this);
 
   this.peer = null;
@@ -128,9 +114,9 @@ function ThaliWifiInfrastructure () {
   this._init();
 }
 
-inherits(ThaliWifiInfrastructure, EventEmitter);
+inherits(WifiListenerAdvertiser, EventEmitter);
 
-ThaliWifiInfrastructure.prototype._init = function () {
+WifiListenerAdvertiser.prototype._init = function () {
   var serverOptions = {
     ssdpIp: thaliConfig.SSDP_IP,
     adInterval: thaliConfig.SSDP_ADVERTISEMENT_INTERVAL,
@@ -162,13 +148,13 @@ ThaliWifiInfrastructure.prototype._init = function () {
   }.bind(this));
 };
 
-ThaliWifiInfrastructure.prototype._updateLocation = function () {
+WifiListenerAdvertiser.prototype._updateLocation = function () {
   var address = this.routerServerAddress;
   var port = this.advertisedPortOverride || this.routerServerPort;
   this._server._location = 'http://' + address + ':' + port;
 };
 
-ThaliWifiInfrastructure.prototype._handleMessage = function (data, available) {
+WifiListenerAdvertiser.prototype._handleMessage = function (data, available) {
   if (this._shouldBeIgnored(data)) {
     return false;
   }
@@ -206,12 +192,12 @@ ThaliWifiInfrastructure.prototype._handleMessage = function (data, available) {
 
 // Function used to filter out SSDP messages that are not
 // relevant for Thali.
-ThaliWifiInfrastructure.prototype._shouldBeIgnored = function (data) {
+WifiListenerAdvertiser.prototype._shouldBeIgnored = function (data) {
   var isUnknownNt = (data.NT !== thaliConfig.SSDP_NT);
   return isUnknownNt || this._isOwnMessage(data);
 };
 
-ThaliWifiInfrastructure.prototype._isOwnMessage = function (data) {
+WifiListenerAdvertiser.prototype._isOwnMessage = function (data) {
   try {
     var peerIdentifier = USN.parse(data.USN).peerIdentifier;
     return (this._ownPeerIdentifiersHistory.indexOf(peerIdentifier) !== -1);
@@ -220,35 +206,14 @@ ThaliWifiInfrastructure.prototype._isOwnMessage = function (data) {
   }
 };
 
-ThaliWifiInfrastructure.prototype._updateStatus = function () {
+WifiListenerAdvertiser.prototype._updateStatus = function () {
   this.emit('discoveryAdvertisingStateUpdateWifiEvent', {
     discoveryActive: this._isListening,
     advertisingActive: this._isAdvertising
   });
 };
 
-/**
- * This method MUST be called before any other method here other than
- * registering for events on the emitter. This method only registers the router
- * object but otherwise doesn't really do anything. It's just here to mirror how
- * {@link module:thaliMobileNativeWrapper} works.
- *
- * If the start fails then the object is not in start state.
- *
- * This method is not idempotent (even though it could be). If called two
- * times in a row without an intervening stop a "Call Stop!" Error MUST be
- * returned.
- *
- * This method can be called after stop since this is a singleton object.
- *
- * @param {Object} router This is an Express Router object (for example,
- * express-pouchdb is a router object) that the caller wants the WiFi
- * connections to be terminated with. This code will put that router at '/' so
- * make sure your paths are set up appropriately.
- * @param {module:thaliMobileNativeWrapper~pskIdToSecret} pskIdToSecret
- * @returns {Promise<?Error>}
- */
-ThaliWifiInfrastructure.prototype.start =
+WifiListenerAdvertiser.prototype.start =
 lock(function thaliWifiStart (router, pskIdToSecret) {
   if (this._isStarted) {
     return Promise.reject(new Error('Call Stop!'));
@@ -259,49 +224,13 @@ lock(function thaliWifiStart (router, pskIdToSecret) {
   return Promise.resolve();
 });
 
-/**
- * This method will call all the stop methods and stop the TCP server hosting
- * the router.
- *
- * Once called the object is in the stop state.
- *
- * This method is idempotent and so MUST be able to be called multiple timex
- * in a row without changing state.
- *
- * @returns {Promise<?Error>}
- */
-ThaliWifiInfrastructure.prototype.stop =
+WifiListenerAdvertiser.prototype.stop =
 lock(function thaliWifiStop () {
   this._isStarted = false;
   return Promise.resolve();
 });
 
-/* eslint-disable max-len */
-/**
- * This will start the local Wi-Fi Infrastructure Mode discovery mechanism
- * (currently SSDP). Calling this method will trigger {@link
- * event:wifiPeerAvailabilityChanged} to fire. This method only causes SSDP
- * queries to be fired and cause us to listen to other service's SSDP:alive and
- * SSDP:byebye messages. It doesn't advertise the service itself.
- *
- * If this method is called on the Android platform then the
- * {@link external:"Mobile('lockAndroidWifiMulticast')".callNative} method
- * MUST be called.
- *
- * This method is idempotent so multiple consecutive calls without an
- * intervening call to stop will not cause a state change.
- *
- * | Error String | Description |
- * |--------------|-------------|
- * | No Wifi radio | This device doesn't support Wifi |
- * | Radio Turned Off | Wifi is turned off. |
- * | Unspecified Error with Radio infrastructure | Something went wrong trying to use WiFi. Check the logs. |
- * | Call Start! | The object is not in start state. |
- *
- * @returns {Promise<?Error>}
- */
-/* eslint-enable max-len */
-ThaliWifiInfrastructure.prototype.startListeningForAdvertisements =
+WifiListenerAdvertiser.prototype.startListeningForAdvertisements =
 lock(function thaliWifiStartListeningForAdvertisements () {
   var self = this;
   if (!self._isStarted) {
@@ -326,28 +255,7 @@ lock(function thaliWifiStartListeningForAdvertisements () {
     });
 });
 
-/**
- * This will stop the local Wi-Fi Infrastructure Mode discovery mechanism
- * (currently SSDP). Calling this method will stop {@link
- * event:wifiPeerAvailabilityChanged} from firing. That is, we will not issue
- * any further SSDP queries nor will we listen for other service's SSDP:alive or
- * SSDP:byebye messages.
- *
- * If this method is called on the Android platform then the {@link
- * external:"Mobile('unlockAndroidWifiMulticast')".callNative} method MUST be
- * called.
- *
- * Note that this method does not affect any existing TCP connections. Not
- * that we could really do anything with them since they are handled directly by
- * Node, not us.
- *
- * | Error String | Description |
- * |--------------|-------------|
- * | Failed | Somehow the stop method couldn't do its job. Check the logs. |
- *
- * @returns {Promise<?Error>}
- */
-ThaliWifiInfrastructure.prototype.stopListeningForAdvertisements =
+WifiListenerAdvertiser.prototype.stopListeningForAdvertisements =
 lock(function thaliWifiStopListeningForAdvertisements () {
   var self = this;
   if (!self._isListening) {
@@ -363,72 +271,7 @@ lock(function thaliWifiStopListeningForAdvertisements () {
   });
 });
 
-/* eslint-disable max-len */
-/**
- * This method will start advertising the peer's presence over the local Wi-Fi
- * Infrastructure Mode discovery mechanism (currently SSDP). When creating the
- * UDP socket for SSDP the socket MUST be "udp4". When socket.bind is called to
- * bind the socket the SSDP multicast address 239.255.255.250 and port 1900 MUST
- * be chosen as they are the reserved address and port for SSDP.
- *
- * __OPEN ISSUE:__ What happens on Android or iOS or the desktop OS's for that
- * matter if multiple apps all try to bind to the same UDP multicast address?
- * It should be fine. But it's important to find out so that other apps can't
- * block us.
- *
- * Also note that the implementation of SSDP MUST recognize advertisements from
- * its own instance and ignore them. However it is possible to have multiple
- * independent instances of ThaliWiFiInfrastructure on the same device and we
- * MUST process advertisements from other instances of ThaliWifiInfrastructure
- * on the same device.
- *
- * This method will also cause the Express app passed in to be hosted in a HTTP
- * server configured with the device's local IP. In other words, the externally
- * available HTTP server is not actually started and made externally available
- * until this method is called. This is different than {@link
- * module:thaliMobileNative} where the server is started on 127.0.0.1 as soon as
- * {@link module:thaliMobileNativeWrapper.start} is called but isn't made
- * externally available over the non-TCP transport until the equivalent of this
- * method is called. If the device switches access points (e.g. the BSSID
- * changes) or if WiFi is lost then the server will be shut down. It is up to
- * the caller to catch the networkChanged event and to call start advertising
- * again.
- *
- * __OPEN ISSUE:__ If we have a properly configured multiple AP network then
- * all the APs will have different BSSID values but identical SSID values and
- * the device should be able to keep the same IP. In that case do we want to
- * specify that if the BSSID changes but the SSID does not then we shouldn't
- * shut down the server?
- *
- * Each time this method is called it will cause the local advertisement to
- * change just enough to notify other peers that this peer has new data to
- * retrieve. No details will be provided about the peer on who the changes are
- * for. All that is provided is a flag just indicating that something has
- * changed. It is up to other peer to connect and retrieve details on what has
- * changed if they are interested. The way this flag MUST be implemented is by
- * creating a UUID the first time startUpdateAdvertisingAndListening is called
- * and maintaining that UUID until stopAdvertisingAndListening is called. When
- * the UUID is created a generation counter MUST be set to 0. Every subsequent
- * call to startUpdateAdvertisingAndListening until the counter is reset MUST
- * increment the counter by 1. The USN set by a call to
- * startUpdateAdvertisingAndListening MUST be of the form `data:` + uuid.v4() +
- * `:` + generation.
- *
- * By design this method is intended to be called multiple times without
- * calling stop as each call causes the currently notification flag to change.
- *
- * | Error String | Description |
- * |--------------|-------------|
- * | Bad Router | router is null or otherwise wasn't accepted by Express |
- * | No Wifi radio | This device doesn't support Wifi |
- * | Radio Turned Off | Wifi is turned off. |
- * | Unspecified Error with Radio infrastructure | Something went wrong trying to use WiFi. Check the logs. |
- * | Call Start! | The object is not in start state. |
- *
- * @returns {Promise<?Error>}
- */
-/* eslint-enable max-len */
-ThaliWifiInfrastructure.prototype.startUpdateAdvertisingAndListening =
+WifiListenerAdvertiser.prototype.startUpdateAdvertisingAndListening =
 lock(function thaliWifiStartUpdateAdvertisingAndListening () {
   var self = this;
   if (!self._isStarted) {
@@ -465,7 +308,7 @@ lock(function thaliWifiStartUpdateAdvertisingAndListening () {
   });
 });
 
-ThaliWifiInfrastructure.prototype._setUpExpressApp = function () {
+WifiListenerAdvertiser.prototype._setUpExpressApp = function () {
   var self = this;
   self.expressApp = express();
   try {
@@ -531,7 +374,7 @@ ThaliWifiInfrastructure.prototype._setUpExpressApp = function () {
     });
 };
 
-ThaliWifiInfrastructure.prototype._updateOwnPeer = function () {
+WifiListenerAdvertiser.prototype._updateOwnPeer = function () {
   if (!this.peer) {
     this.peer = {
       peerIdentifier: uuid.v4(),
@@ -550,21 +393,7 @@ ThaliWifiInfrastructure.prototype._updateOwnPeer = function () {
   }
 };
 
-/**
- * This method MUST stop advertising the peer's presence over the local Wi-Fi
- * Infrastructure Mode discovery mechanism (currently SSDP). This method MUST
- * also stop the HTTP server started by the start method.
- *
- * So long as the device isn't advertising the peer and the server is stopped
- * (even if the system was always in that state) then this method MUST succeed.
- *
- * | Error String | Description |
- * |--------------|-------------|
- * | Failed | Somehow the stop method couldn't do its job. Check the logs. |
- *
- * @returns {Promise<?Error>}
- */
-ThaliWifiInfrastructure.prototype.stopAdvertisingAndListening =
+WifiListenerAdvertiser.prototype.stopAdvertisingAndListening =
 lock(function thaliWifiStopAdvertisingAndListening () {
   var self = this;
 
@@ -668,12 +497,22 @@ lock(function thaliWifiStopAdvertisingAndListening () {
  *
  */
 
-ThaliWifiInfrastructure.prototype.getNetworkStatus = function () {
-  return thaliMobileNativeWrapper.getNonTCPNetworkStatus();
-};
-
-function WifiWrapper() {
-  this.wifi = new ThaliWifiInfrastructure();
+/**
+ * This creates an object to manage a WiFi instance. During production we will
+ * have exactly one instance running but for testing purposes it's very useful
+ * to be able to run multiple instances. So long as the SSDP code uses a
+ * different port to advertise for responses for each instance and as the router
+ * instances are already specified to use whatever ports are available the
+ * different instances should not run into each other.
+ *
+ * @public
+ * @constructor
+ * @fires event:wifiPeerAvailabilityChanged
+ * @fires event:networkChangedWifi
+ * @fires discoveryAdvertisingStateUpdateWifiEvent
+ */
+function ThaliWifiInfrastructure() {
+  this.wifi = new WifiListenerAdvertiser();
   this.wifi.wrapper = this;
 
   this._isStarted = false;
@@ -691,13 +530,12 @@ function WifiWrapper() {
     'removeListener',
     'removeAllListeners',
     'emit',
-    'getNetworkStatus',
   ].forEach(function (methodName) {
     this[methodName] = this.wifi[methodName].bind(this.wifi);
   }, this);
 }
 
-WifiWrapper.prototype._handleNetworkChanges =
+ThaliWifiInfrastructure.prototype._handleNetworkChanges =
 function (networkStatus) {
   var isWifiUnchanged = this._lastNetworkStatus &&
       networkStatus.wifi === this._lastNetworkStatus.wifi;
@@ -745,7 +583,7 @@ function (networkStatus) {
   });
 };
 
-WifiWrapper.prototype.getCurrentState = function () {
+ThaliWifiInfrastructure.prototype.getCurrentState = function () {
   return {
     started: this.wifi._isStarted,
     listening: this.wifi._isListening,
@@ -753,7 +591,7 @@ WifiWrapper.prototype.getCurrentState = function () {
   };
 };
 
-WifiWrapper.prototype.getTargetState = function () {
+ThaliWifiInfrastructure.prototype.getTargetState = function () {
   return {
     started: this._isStarted,
     listening: this._isListening,
@@ -761,31 +599,52 @@ WifiWrapper.prototype.getTargetState = function () {
   };
 };
 
-WifiWrapper.prototype.getCurrentPeer = function () {
+ThaliWifiInfrastructure.prototype.getCurrentPeer = function () {
   return this.wifi.peer;
 };
 
-WifiWrapper.prototype.getSSDPServer = function () {
+ThaliWifiInfrastructure.prototype.getSSDPServer = function () {
   return this.wifi._server;
 };
 
-WifiWrapper.prototype.getSSDPClient = function () {
+ThaliWifiInfrastructure.prototype.getSSDPClient = function () {
   return this.wifi._client;
 };
 
-WifiWrapper.prototype.overrideAdvertisedPort = function (port) {
+ThaliWifiInfrastructure.prototype.overrideAdvertisedPort = function (port) {
   this.wifi.advertisedPortOverride = port;
 };
 
-WifiWrapper.prototype.restoreAdvertisedPort = function () {
+ThaliWifiInfrastructure.prototype.restoreAdvertisedPort = function () {
   this.wifi.advertisedPortOverride = null;
 };
 
-WifiWrapper.prototype.getOverridenAdvertisedPort = function () {
+ThaliWifiInfrastructure.prototype.getOverridenAdvertisedPort = function () {
   return this.wifi.advertisedPortOverride;
 };
 
-WifiWrapper.prototype.start = function (router, pskIdToSecret) {
+/**
+ * This method MUST be called before any other method here other than
+ * registering for events on the emitter. This method only registers the router
+ * object but otherwise doesn't really do anything. It's just here to mirror how
+ * {@link module:thaliMobileNativeWrapper} works.
+ *
+ * If the start fails then the object is not in start state.
+ *
+ * This method is not idempotent (even though it could be). If called two
+ * times in a row without an intervening stop a "Call Stop!" Error MUST be
+ * returned.
+ *
+ * This method can be called after stop since this is a singleton object.
+ *
+ * @param {Object} router This is an Express Router object (for example,
+ * express-pouchdb is a router object) that the caller wants the WiFi
+ * connections to be terminated with. This code will put that router at '/' so
+ * make sure your paths are set up appropriately.
+ * @param {module:thaliMobileNativeWrapper~pskIdToSecret} pskIdToSecret
+ * @returns {Promise<?Error>}
+ */
+ThaliWifiInfrastructure.prototype.start = function (router, pskIdToSecret) {
   var self = this;
   thaliMobileNativeWrapper.emitter
     .on('networkChangedNonTCP', self._networkChangedHandler);
@@ -803,55 +662,18 @@ WifiWrapper.prototype.start = function (router, pskIdToSecret) {
   });
 };
 
-WifiWrapper.prototype.startListeningForAdvertisements = function () {
-  this._isListening = true;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
-      this._rejectPerWifiState().then(resolve, reject);
-      return;
-    }
-    this.wifi.startListeningForAdvertisements().then(resolve, reject);
-  }.bind(this));
-};
-
-WifiWrapper.prototype.stopListeningForAdvertisements = function () {
-  this._isListening = false;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.wifi.stopListeningForAdvertisements().then(resolve, reject);
-  }.bind(this));
-};
-
-WifiWrapper.prototype._pauseListeningForAdvertisements = function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.wifi.stopListeningForAdvertisements().then(resolve, reject);
-  }.bind(this));
-};
-
-WifiWrapper.prototype.startUpdateAdvertisingAndListening = function () {
-  this._isAdvertising = true;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
-      this._rejectPerWifiState().then(resolve, reject);
-      return;
-    }
-    this.wifi.startUpdateAdvertisingAndListening().then(resolve, reject);
-  }.bind(this));
-};
-
-WifiWrapper.prototype.stopAdvertisingAndListening = function () {
-  this._isAdvertising = false;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
-  }.bind(this));
-};
-
-WifiWrapper.prototype._pauseAdvertisingAndListening = function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
-  }.bind(this));
-};
-
-WifiWrapper.prototype.stop = function () {
+/**
+ * This method will call all the stop methods and stop the TCP server hosting
+ * the router.
+ *
+ * Once called the object is in the stop state.
+ *
+ * This method is idempotent and so MUST be able to be called multiple timex
+ * in a row without changing state.
+ *
+ * @returns {Promise<?Error>}
+ */
+ThaliWifiInfrastructure.prototype.stop = function () {
   thaliMobileNativeWrapper.emitter
     .removeListener('networkChangedNonTCP', this._networkChangedHandler);
   this._lastNetworkStatus = null;
@@ -875,7 +697,181 @@ WifiWrapper.prototype.stop = function () {
   });
 };
 
-WifiWrapper.prototype._rejectPerWifiState = function () {
+/**
+ * This will start the local Wi-Fi Infrastructure Mode discovery mechanism
+ * (currently SSDP). Calling this method will trigger {@link
+ * event:wifiPeerAvailabilityChanged} to fire. This method only causes SSDP
+ * queries to be fired and cause us to listen to other service's SSDP:alive and
+ * SSDP:byebye messages. It doesn't advertise the service itself.
+ *
+ * If this method is called on the Android platform then the
+ * {@link external:"Mobile('lockAndroidWifiMulticast')".callNative} method
+ * MUST be called.
+ *
+ * This method is idempotent so multiple consecutive calls without an
+ * intervening call to stop will not cause a state change.
+ *
+ * | Error String | Description |
+ * |--------------|-------------|
+ * | No Wifi radio | This device doesn't support Wifi |
+ * | Radio Turned Off | Wifi is turned off. |
+ * | Unspecified Error with Radio infrastructure | Something went wrong trying to use WiFi. Check the logs. |
+ * | Call Start! | The object is not in start state. |
+ *
+ * @returns {Promise<?Error>}
+ */
+ThaliWifiInfrastructure.prototype.startListeningForAdvertisements =
+function () {
+  this._isListening = true;
+  return promiseQueue.enqueue(function (resolve, reject) {
+    if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
+      this._rejectPerWifiState().then(resolve, reject);
+      return;
+    }
+    this.wifi.startListeningForAdvertisements().then(resolve, reject);
+  }.bind(this));
+};
+
+/**
+ * This will stop the local Wi-Fi Infrastructure Mode discovery mechanism
+ * (currently SSDP). Calling this method will stop {@link
+ * event:wifiPeerAvailabilityChanged} from firing. That is, we will not issue
+ * any further SSDP queries nor will we listen for other service's SSDP:alive or
+ * SSDP:byebye messages.
+ *
+ * If this method is called on the Android platform then the {@link
+ * external:"Mobile('unlockAndroidWifiMulticast')".callNative} method MUST be
+ * called.
+ *
+ * Note that this method does not affect any existing TCP connections. Not
+ * that we could really do anything with them since they are handled directly by
+ * Node, not us.
+ *
+ * | Error String | Description |
+ * |--------------|-------------|
+ * | Failed | Somehow the stop method couldn't do its job. Check the logs. |
+ *
+ * @returns {Promise<?Error>}
+ */
+ThaliWifiInfrastructure.prototype.stopListeningForAdvertisements =
+function () {
+  this._isListening = false;
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopListeningForAdvertisements().then(resolve, reject);
+  }.bind(this));
+};
+
+ThaliWifiInfrastructure.prototype._pauseListeningForAdvertisements =
+function () {
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopListeningForAdvertisements().then(resolve, reject);
+  }.bind(this));
+};
+
+/**
+ * This method will start advertising the peer's presence over the local Wi-Fi
+ * Infrastructure Mode discovery mechanism (currently SSDP). When creating the
+ * UDP socket for SSDP the socket MUST be "udp4". When socket.bind is called to
+ * bind the socket the SSDP multicast address 239.255.255.250 and port 1900 MUST
+ * be chosen as they are the reserved address and port for SSDP.
+ *
+ * __OPEN ISSUE:__ What happens on Android or iOS or the desktop OS's for that
+ * matter if multiple apps all try to bind to the same UDP multicast address?
+ * It should be fine. But it's important to find out so that other apps can't
+ * block us.
+ *
+ * Also note that the implementation of SSDP MUST recognize advertisements from
+ * its own instance and ignore them. However it is possible to have multiple
+ * independent instances of ThaliWiFiInfrastructure on the same device and we
+ * MUST process advertisements from other instances of ThaliWifiInfrastructure
+ * on the same device.
+ *
+ * This method will also cause the Express app passed in to be hosted in a HTTP
+ * server configured with the device's local IP. In other words, the externally
+ * available HTTP server is not actually started and made externally available
+ * until this method is called. This is different than {@link
+ * module:thaliMobileNative} where the server is started on 127.0.0.1 as soon as
+ * {@link module:thaliMobileNativeWrapper.start} is called but isn't made
+ * externally available over the non-TCP transport until the equivalent of this
+ * method is called. If the device switches access points (e.g. the BSSID
+ * changes) or if WiFi is lost then the server will be shut down. It is up to
+ * the caller to catch the networkChanged event and to call start advertising
+ * again.
+ *
+ * __OPEN ISSUE:__ If we have a properly configured multiple AP network then
+ * all the APs will have different BSSID values but identical SSID values and
+ * the device should be able to keep the same IP. In that case do we want to
+ * specify that if the BSSID changes but the SSID does not then we shouldn't
+ * shut down the server?
+ *
+ * Each time this method is called it will cause the local advertisement to
+ * change just enough to notify other peers that this peer has new data to
+ * retrieve. No details will be provided about the peer on who the changes are
+ * for. All that is provided is a flag just indicating that something has
+ * changed. It is up to other peer to connect and retrieve details on what has
+ * changed if they are interested. The way this flag MUST be implemented is by
+ * creating a UUID the first time startUpdateAdvertisingAndListening is called
+ * and maintaining that UUID until stopAdvertisingAndListening is called. When
+ * the UUID is created a generation counter MUST be set to 0. Every subsequent
+ * call to startUpdateAdvertisingAndListening until the counter is reset MUST
+ * increment the counter by 1. The USN set by a call to
+ * startUpdateAdvertisingAndListening MUST be of the form `data:` + uuid.v4() +
+ * `:` + generation.
+ *
+ * By design this method is intended to be called multiple times without
+ * calling stop as each call causes the currently notification flag to change.
+ *
+ * | Error String | Description |
+ * |--------------|-------------|
+ * | Bad Router | router is null or otherwise wasn't accepted by Express |
+ * | No Wifi radio | This device doesn't support Wifi |
+ * | Radio Turned Off | Wifi is turned off. |
+ * | Unspecified Error with Radio infrastructure | Something went wrong trying to use WiFi. Check the logs. |
+ * | Call Start! | The object is not in start state. |
+ *
+ * @returns {Promise<?Error>}
+ */
+ThaliWifiInfrastructure.prototype.startUpdateAdvertisingAndListening =
+function () {
+  this._isAdvertising = true;
+  return promiseQueue.enqueue(function (resolve, reject) {
+    if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
+      this._rejectPerWifiState().then(resolve, reject);
+      return;
+    }
+    this.wifi.startUpdateAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
+};
+
+/**
+ * This method MUST stop advertising the peer's presence over the local Wi-Fi
+ * Infrastructure Mode discovery mechanism (currently SSDP). This method MUST
+ * also stop the HTTP server started by the start method.
+ *
+ * So long as the device isn't advertising the peer and the server is stopped
+ * (even if the system was always in that state) then this method MUST succeed.
+ *
+ * | Error String | Description |
+ * |--------------|-------------|
+ * | Failed | Somehow the stop method couldn't do its job. Check the logs. |
+ *
+ * @returns {Promise<?Error>}
+ */
+ThaliWifiInfrastructure.prototype.stopAdvertisingAndListening = function () {
+  this._isAdvertising = false;
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
+};
+
+ThaliWifiInfrastructure.prototype._pauseAdvertisingAndListening = function () {
+  return promiseQueue.enqueue(function (resolve, reject) {
+    this.wifi.stopAdvertisingAndListening().then(resolve, reject);
+  }.bind(this));
+};
+
+
+ThaliWifiInfrastructure.prototype._rejectPerWifiState = function () {
   var errorMessage;
   switch (this._lastNetworkStatus.wifi) {
     case 'off': {
@@ -895,4 +891,8 @@ WifiWrapper.prototype._rejectPerWifiState = function () {
   return Promise.reject(new Error(errorMessage));
 };
 
-module.exports = WifiWrapper;
+ThaliWifiInfrastructure.prototype.getNetworkStatus = function () {
+  return thaliMobileNativeWrapper.getNonTCPNetworkStatus();
+};
+
+module.exports = ThaliWifiInfrastructure;
