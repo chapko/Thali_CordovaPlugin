@@ -1419,49 +1419,6 @@ function handleNetworkChanged (networkChangedValue) {
     // peers unavailable.
     changePeersUnavailable(connectionTypes.TCP_NATIVE);
   }
-
-  var radioEnabled =
-    networkChangedValue.wifi === 'on' ||
-    networkChangedValue.bluetooth === 'on' ||
-    networkChangedValue.bluetoothLowEnergy === 'on';
-
-  if (!radioEnabled) {
-    return;
-  }
-
-  // At least some radio was enabled so try to start whatever can be potentially
-  // started as soon as possible.
-  var enqueuedStart = promiseQueue.enqueueAtTop(function (resolve, reject) {
-    var args = thaliMobileStates.startArguments;
-    start(args.router, args.pskIdToSecret, args.networkType)
-      .then(resolve, reject);
-  });
-
-  muteRejection(enqueuedStart).then(function () {
-    var checkErrors = function (operation, combinedResult) {
-      Object.keys(combinedResult).forEach(function (resultType) {
-        if (combinedResult[resultType] !== null) {
-          logger.info('Failed operation %s with error: ' +
-                      combinedResult[resultType], operation);
-        }
-      });
-    };
-    if (thaliMobileStates.listening) {
-      promiseQueue.enqueueAtTop(function (resolve, reject) {
-        module.exports._startListeningForAdvertisements().then(resolve, reject);
-      }).then(function (combinedResult) {
-        checkErrors('startListeningForAdvertisements', combinedResult);
-      });
-    }
-    if (thaliMobileStates.advertising) {
-      promiseQueue.enqueueAtTop(function (resolve, reject) {
-        module.exports._startUpdateAdvertisingAndListening()
-          .then(resolve, reject);
-      }).then(function (combinedResult) {
-        checkErrors('startUpdateAdvertisingAndListening', combinedResult);
-      });
-    }
-  });
 }
 
 function handleNetworkChangedNonTCP (networkChangedValue) {

@@ -671,12 +671,8 @@ function (networkStatus) {
       // If wifi didn't turn on, it was turned into a state where we want
       // to stop our actions
       actionResults.push(
-        muteRejection(
-          this._pauseAdvertisingAndListening()
-        ),
-        muteRejection(
-          this._pauseListeningForAdvertisements()
-        )
+        muteRejection(this._pauseAdvertisingAndListening()),
+        muteRejection(this._pauseListeningForAdvertisements())
       );
     }
   }
@@ -729,16 +725,16 @@ ThaliWifiInfrastructure.prototype.getSSDPClient = function () {
   return this.listener._client;
 };
 
-ThaliWifiInfrastructure.prototype.overrideAdvertisedPort = function (port) {
-  this.wifi.advertisedPortOverride = port;
+ThaliWifiInfrastructure.prototype._overrideAdvertisedPort = function (port) {
+  this.advertiser.advertisedPortOverride = port;
 };
 
-ThaliWifiInfrastructure.prototype.restoreAdvertisedPort = function () {
-  this.wifi.advertisedPortOverride = null;
+ThaliWifiInfrastructure.prototype._restoreAdvertisedPort = function () {
+  this.advertiser.advertisedPortOverride = null;
 };
 
-ThaliWifiInfrastructure.prototype.getOverridenAdvertisedPort = function () {
-  return this.wifi.advertisedPortOverride;
+ThaliWifiInfrastructure.prototype._getOverridenAdvertisedPort = function () {
+  return this.advertiser.advertisedPortOverride;
 };
 
 /**

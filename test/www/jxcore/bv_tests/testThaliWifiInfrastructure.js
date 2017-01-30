@@ -541,6 +541,76 @@ function (t) {
   });
 });
 
+test('calls correct starts when network changes',
+  function () {
+    return !platform.isAndroid;
+  },
+  function (t) {
+    var listeningStartSpy =
+      sinon.spy(wifiInfrastructure.listener, 'start');
+    var advertisingStartSpy =
+      sinon.spy(wifiInfrastructure.advertiser, 'start');
+    var advertisingUpdateSpy =
+      sinon.spy(wifiInfrastructure.advertiser, 'update');
+
+    testUtils.ensureWifi(false)
+      .then(function () {
+        var validateStartResult = function (promise) {
+          return promise
+            .then(function () {
+              t.fail('Should fail');
+            })
+            .catch(function (error) {
+              t.equals(error.message, 'Radio Turned Off',
+                'specific error expected');
+            });
+        };
+        var listen = validateStartResult(
+          wifiInfrastructure.startListeningForAdvertisements()
+        );
+        var advertise = validateStartResult(
+          wifiInfrastructure.startUpdateAdvertisingAndListening()
+        );
+        return Promise.all([listen, advertise]);
+      })
+      .then(function () {
+        listeningStartSpy.reset();
+        advertisingStartSpy.reset();
+        advertisingUpdateSpy.reset();
+        return testUtils.ensureWifi(true);
+      })
+      .then(function () {
+        return wifiInfrastructure._promiseQueue.enqueue(function (resolve) {
+          // There are two possible real world scenarios:
+          // 1. device connects to another wifi network (new SSID). In this
+          //    case 2 events are fired: the first one with wifi:on and
+          //    without bssid, the second one with wifi:on and with new bssid
+          //    and ssid.
+          // 2. device moves to another access point in the same wifi network.
+          //    in this case only one change event is emitted with updated
+          //    bssidName
+          // We are going to assume that it was emitted at least once
+          t.ok(listeningStartSpy.called,
+            'listening started at least once');
+          t.ok(advertisingStartSpy.called,
+            'advertising started at least once');
+          t.ok(advertisingUpdateSpy.called,
+            'advertising updated at least once');
+          resolve();
+        });
+      })
+      .catch(function (err) {
+        t.fail(err);
+      })
+      .then(function () {
+        listeningStartSpy.restore();
+        advertisingStartSpy.restore();
+        advertisingUpdateSpy.restore();
+        t.end();
+      });
+  }
+);
+
 test('does not get peer changes from self', function (t) {
   var knownOwnPeerIdentifiers = [];
 
