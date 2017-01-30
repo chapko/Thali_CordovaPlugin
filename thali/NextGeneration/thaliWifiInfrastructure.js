@@ -19,8 +19,6 @@ var PromiseQueue = require('./promiseQueue');
 var USN = require('./utils/usn');
 var platform = require('./utils/platform');
 
-var promiseQueue = new PromiseQueue();
-
 var muteRejection = (function () {
   function returnNull () { return null; }
   function returnArg (arg) { return arg; }
@@ -569,14 +567,19 @@ WifiAdvertiser.prototype.getAdvertisedPeerIdentifiers = function () {
  * @fires discoveryAdvertisingStateUpdateWifiEvent
  */
 function ThaliWifiInfrastructure() {
+  // Represent target states (the state after promise queue is completed)
   this._isStarted = false;
   this._isAdvertising = false;
   this._isListening = false;
+
+  this._promiseQueue = new PromiseQueue();
+
   this._lastNetworkStatus = null;
 
   var advertiser = new WifiAdvertiser();
   var listener = new WifiListener();
 
+  // make listener ignore advertiser's messages
   listener.setMessageFilter(function (data) {
     var ignorePeers = advertiser.getAdvertisedPeerIdentifiers();
     var peer = USN.tryParse(data.USN, null);
@@ -586,32 +589,37 @@ function ThaliWifiInfrastructure() {
   this.advertiser = advertiser;
   this.listener = listener;
 
+  this._setUpEvents();
+}
+
+ThaliWifiInfrastructure.prototype._setUpEvents = function() {
+  var self = this;
+  var states = { advertising: false, listening: false };
+
+  // bind networkChanged listener
   this._networkChangedHandler = function (networkChangedValue) {
     this._handleNetworkChanges(networkChangedValue);
   }.bind(this);
 
-  var states = {
-    advertising: advertiser.isAdvertising(),
-    listening: listener.isListening(),
-  };
-  var emit = function () {
-    this.emit('discoveryAdvertisingStateUpdateWifiEvent', {
+  var emitStateUpdate = function () {
+    self.emit('discoveryAdvertisingStateUpdateWifiEvent', {
       discoveryActive: states.listening,
       advertisingActive: states.advertising,
     });
-  }.bind(this);
-  this.advertiser.on('stateChange', function (newState) {
+  };
+  self.advertiser.on('stateChange', function (newState) {
     states.advertising = newState.advertising;
-    emit();
+    emitStateUpdate();
   });
-  this.listener.on('stateChange', function (newState) {
+  self.listener.on('stateChange', function (newState) {
     states.listening = newState.listening;
-    emit();
+    emitStateUpdate();
   });
-  this.listener.on('wifiPeerAvailabilityChanged', function (peer) {
-    this.emit('wifiPeerAvailabilityChanged', peer);
-  }.bind(this));
-}
+
+  self.listener.on('wifiPeerAvailabilityChanged', function (peer) {
+    self.emit('wifiPeerAvailabilityChanged', peer);
+  });
+};
 
 inherits(ThaliWifiInfrastructure, EventEmitter);
 
@@ -734,7 +742,7 @@ ThaliWifiInfrastructure.prototype.start = function (router, pskIdToSecret) {
   }
 
   this._isStarted = true;
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return this._promiseQueue.enqueue(function (resolve, reject) {
     thaliMobileNativeWrapper.getNonTCPNetworkStatus()
       .then(function (networkStatus) {
         if (!self._lastNetworkStatus) {
@@ -770,7 +778,7 @@ ThaliWifiInfrastructure.prototype.stop = function () {
   this._isAdvertising = false;
   this._isListening = false;
   var self = this;
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return this._promiseQueue.enqueue(function (resolve, reject) {
     Promise.all([
       self.advertiser.stop(),
       self.listener.stop()
@@ -803,17 +811,18 @@ ThaliWifiInfrastructure.prototype.stop = function () {
  */
 ThaliWifiInfrastructure.prototype.startListeningForAdvertisements =
 function () {
-  this._isListening = true;
-  if (!this._isStarted) {
+  var self = this;
+  self._isListening = true;
+  if (!self._isStarted) {
     return Promise.reject(new Error('Call Start!'));
   }
-  return promiseQueue.enqueue(function (resolve, reject) {
-    if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
-      this._rejectPerWifiState().then(resolve, reject);
+  return self._promiseQueue.enqueue(function (resolve, reject) {
+    if (self._lastNetworkStatus && self._lastNetworkStatus.wifi === 'off') {
+      self._rejectPerWifiState().then(resolve, reject);
       return;
     }
-    this.listener.start().then(resolve, reject);
-  }.bind(this));
+    self.listener.start().then(resolve, reject);
+  });
 };
 
 /**
@@ -840,16 +849,19 @@ function () {
 ThaliWifiInfrastructure.prototype.stopListeningForAdvertisements =
 function () {
   this._isListening = false;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.listener.stop().then(resolve, reject);
-  }.bind(this));
+
+  var listener = this.listener;
+  return this._promiseQueue.enqueue(function (resolve, reject) {
+    listener.stop().then(resolve, reject);
+  });
 };
 
 ThaliWifiInfrastructure.prototype._pauseListeningForAdvertisements =
 function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.listener.stop().then(resolve, reject);
-  }.bind(this));
+  var listener = this.listener;
+  return this._promiseQueue.enqueue(function (resolve, reject) {
+    listener.stop().then(resolve, reject);
+  });
 };
 
 /**
@@ -920,13 +932,13 @@ function () {
   var self = this;
   var advertiser = self.advertiser;
 
-  if (!this._isStarted) {
+  if (!self._isStarted) {
     return Promise.reject(new Error('Call Start!'));
   }
 
   self._isAdvertising = true;
 
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return self._promiseQueue.enqueue(function (resolve, reject) {
     if (self._lastNetworkStatus && self._lastNetworkStatus.wifi === 'off') {
       self._rejectPerWifiState().then(resolve, reject);
       return;
@@ -957,15 +969,18 @@ function () {
  */
 ThaliWifiInfrastructure.prototype.stopAdvertisingAndListening = function () {
   this._isAdvertising = false;
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.advertiser.stop().then(resolve, reject);
-  }.bind(this));
+
+  var advertiser = this.advertiser;
+  return this._promiseQueue.enqueue(function (resolve, reject) {
+    advertiser.stop().then(resolve, reject);
+  });
 };
 
 ThaliWifiInfrastructure.prototype._pauseAdvertisingAndListening = function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
-    this.advertiser.stop().then(resolve, reject);
-  }.bind(this));
+  var advertiser = this.advertiser;
+  return this._promiseQueue.enqueue(function (resolve, reject) {
+    advertiser.stop().then(resolve, reject);
+  });
 };
 
 
