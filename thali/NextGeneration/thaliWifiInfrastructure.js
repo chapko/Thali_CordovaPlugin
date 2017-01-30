@@ -51,6 +51,9 @@ var muteRejection = (function () {
  */
 
 
+/**
+ * @class WifiListener
+ */
 function WifiListener() {
   this._isListening = false;
   this._filterMessageFn = null;
@@ -77,6 +80,9 @@ function WifiListener() {
 
 inherits(WifiListener, EventEmitter);
 
+/**
+ * @param {function} filterFn
+ */
 WifiListener.prototype.setMessageFilter = function (filterFn) {
   if (typeof filterFn !== 'function') {
     throw new Error('Filter is expected to be a function');
@@ -84,6 +90,12 @@ WifiListener.prototype.setMessageFilter = function (filterFn) {
   this._filterMessageFn = filterFn;
 };
 
+/**
+ * @private
+ * @param {object} data
+ * @param {boolean} available
+ * @return {boolean}
+ */
 WifiListener.prototype._handleMessage = function (data, available) {
   if (this._shouldBeIgnored(data)) {
     return false;
@@ -120,8 +132,12 @@ WifiListener.prototype._handleMessage = function (data, available) {
   return true;
 };
 
-// Function used to filter out SSDP messages that are not
-// relevant for Thali.
+/**
+ * Function used to filter out SSDP messages that are not relevant for Thali.
+ * @private
+ * @param {object} data
+ * @return {boolean}
+ */
 WifiListener.prototype._shouldBeIgnored = function (data) {
   var isUnknownNt = (data.NT !== thaliConfig.SSDP_NT);
   var isFilteredMessage = this._filterMessageFn ?
@@ -130,6 +146,9 @@ WifiListener.prototype._shouldBeIgnored = function (data) {
   return (isUnknownNt || isFilteredMessage);
 };
 
+/**
+ * @return {Promise}
+ */
 WifiListener.prototype.start = function () {
   var self = this;
   if (self._isListening) {
@@ -150,6 +169,9 @@ WifiListener.prototype.start = function () {
     });
 };
 
+/**
+ * @return {Promise}
+ */
 WifiListener.prototype.stop = function () {
   var self = this;
   if (!self._isListening) {
@@ -165,16 +187,26 @@ WifiListener.prototype.stop = function () {
   });
 };
 
+/**
+ * @private
+ */
 WifiListener.prototype._notifyStateChange = function () {
   this.emit('stateChange', {
     listening: this._isListening
   });
 };
 
+/**
+ * @return {boolean}
+ */
 WifiListener.prototype.isListening = function () {
   return this._isListening;
 };
 
+
+/**
+ * @class WifiAdvertiser
+ */
 function WifiAdvertiser () {
   EventEmitter.call(this);
 
@@ -201,6 +233,9 @@ function WifiAdvertiser () {
 
 inherits(WifiAdvertiser, EventEmitter);
 
+/**
+ * @private
+ */
 WifiAdvertiser.prototype._init = function () {
   this._server = new nodessdp.Server({
     ssdpIp: thaliConfig.SSDP_IP,
@@ -216,26 +251,43 @@ WifiAdvertiser.prototype._init = function () {
   this._updateLocation();
 };
 
+/**
+ * @private
+ */
 WifiAdvertiser.prototype._updateLocation = function () {
   var address = this.routerServerAddress;
   var port = this.advertisedPortOverride || this.routerServerPort;
   this._server._location = 'http://' + address + ':' + port;
 };
 
+/**
+ * @private
+ */
 WifiAdvertiser.prototype._notifyStateChange = function () {
   this.emit('stateChange', {
     advertising: this._isAdvertising,
   });
 };
 
+/**
+ * @return {boolean}
+ */
 WifiAdvertiser.prototype.isStarted = function () {
   return this._isStarted;
 };
 
+/**
+ * @return {boolean}
+ */
 WifiAdvertiser.prototype.isAdvertising = function () {
   return this._isAdvertising;
 };
 
+/**
+ * @param {Object} router
+ * @param {module:thaliMobileNativeWrapper~pskIdToSecret} pskIdToSecret
+ * @return {Promise}
+ */
 WifiAdvertiser.prototype.start = function (router, pskIdToSecret) {
   var self = this;
   if (self._isStarted) {
@@ -250,6 +302,9 @@ WifiAdvertiser.prototype.start = function (router, pskIdToSecret) {
     });
 };
 
+/**
+ * @return {Promise}
+ */
 WifiAdvertiser.prototype.update = function () {
   var self = this;
 
@@ -283,6 +338,9 @@ WifiAdvertiser.prototype.update = function () {
   });
 };
 
+/**
+ * @return {Promise}
+ */
 WifiAdvertiser.prototype.stop = function () {
   var self = this;
 
@@ -315,6 +373,12 @@ WifiAdvertiser.prototype.stop = function () {
   });
 };
 
+/**
+ * @private
+ * @param {Object} router
+ * @param {module:thaliMobileNativeWrapper~pskIdToSecret} pskIdToSecret
+ * @return {Promise}
+ */
 WifiAdvertiser.prototype._setUpExpressApp = function (router, pskIdToSecret) {
   var self = this;
   self.expressApp = express();
@@ -381,6 +445,9 @@ WifiAdvertiser.prototype._setUpExpressApp = function (router, pskIdToSecret) {
     });
 };
 
+/**
+ * @private
+ */
 WifiAdvertiser.prototype._updateAdvertisingPeer = function () {
   if (!this.peer) {
     this.peer = {
@@ -400,6 +467,9 @@ WifiAdvertiser.prototype._updateAdvertisingPeer = function () {
   }
 };
 
+/**
+ * @return {Object[]}
+ */
 WifiAdvertiser.prototype.getAdvertisedPeerIdentifiers = function () {
   return this._ownPeerIdentifiersHistory;
 };
