@@ -238,7 +238,8 @@ test('messages with invalid location or USN should be ignored', function (t) {
   t.equals(handledMessage, false, 'should not have emitted with invalid port');
   testMessage.USN = 'foobar';
   testMessage.LOCATION = 'http://foo.bar:50000';
-  handledMessage = wifiInfrastructure.listener._handleMessage(testMessage, true);
+  handledMessage = wifiInfrastructure.listener
+    ._handleMessage(testMessage, true);
   t.equals(handledMessage, false, 'should not have emitted with invalid USN');
   t.end();
 });
@@ -550,8 +551,6 @@ test('calls correct starts when network changes',
       sinon.spy(wifiInfrastructure.listener, 'start');
     var advertisingStartSpy =
       sinon.spy(wifiInfrastructure.advertiser, 'start');
-    var advertisingUpdateSpy =
-      sinon.spy(wifiInfrastructure.advertiser, 'update');
 
     testUtils.ensureWifi(false)
       .then(function () {
@@ -576,7 +575,6 @@ test('calls correct starts when network changes',
       .then(function () {
         listeningStartSpy.reset();
         advertisingStartSpy.reset();
-        advertisingUpdateSpy.reset();
         return testUtils.ensureWifi(true);
       })
       .then(function () {
@@ -594,8 +592,6 @@ test('calls correct starts when network changes',
             'listening started at least once');
           t.ok(advertisingStartSpy.called,
             'advertising started at least once');
-          t.ok(advertisingUpdateSpy.called,
-            'advertising updated at least once');
           resolve();
         });
       })
@@ -605,7 +601,6 @@ test('calls correct starts when network changes',
       .then(function () {
         listeningStartSpy.restore();
         advertisingStartSpy.restore();
-        advertisingUpdateSpy.restore();
         t.end();
       });
   }
@@ -702,7 +697,6 @@ test('Make sure we do not use Android locks when we are not on Android',
       });
   });
 
-// ORDER
 test('functions are run from a queue in the right order', function (t) {
   var firstSpy = sinon.spy();
   var secondSpy = sinon.spy();

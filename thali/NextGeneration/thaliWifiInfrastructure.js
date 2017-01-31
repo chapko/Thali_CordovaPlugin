@@ -223,7 +223,6 @@ function WifiAdvertiser () {
   this.routerServerErrorListener = null;
   this.pskIdToSecret = null;
 
-  this._isStarted = false;
   this._isAdvertising = false;
 
   this._init();
@@ -270,13 +269,6 @@ WifiAdvertiser.prototype._notifyStateChange = function () {
 /**
  * @return {boolean}
  */
-WifiAdvertiser.prototype.isStarted = function () {
-  return this._isStarted;
-};
-
-/**
- * @return {boolean}
- */
 WifiAdvertiser.prototype.isAdvertising = function () {
   return this._isAdvertising;
 };
@@ -288,15 +280,27 @@ WifiAdvertiser.prototype.isAdvertising = function () {
  */
 WifiAdvertiser.prototype.start = function (router, pskIdToSecret) {
   var self = this;
-  if (self._isStarted) {
+  if (self._isAdvertising) {
     return Promise.reject(new Error('Call Stop!'));
   }
-  self._isStarted = true;
+  self._isAdvertising = true;
 
   return self._setUpExpressApp(router, pskIdToSecret)
+    .then(function () {
+      self._updateAdvertisingPeer();
+      var usn = USN.stringify(self.peer);
+      self._server.setUSN(usn);
+      return self._server.startAsync();
+    })
+    .then(function () {
+      self._notifyStateChange();
+    })
     .catch(function (error) {
-      self._isStarted = false;
-      return Promise.reject(error);
+      self._isAdvertising = false;
+      // if SSDP server can't be started we should stop our router server
+      return self._destroyExpressApp().then(function () {
+        return Promise.reject(error);
+      });
     });
 };
 
@@ -306,34 +310,26 @@ WifiAdvertiser.prototype.start = function (router, pskIdToSecret) {
 WifiAdvertiser.prototype.update = function () {
   var self = this;
 
-  if (!self._isStarted) {
+  if (!self._isAdvertising) {
     return Promise.reject(new Error('Call Start!'));
   }
 
-
-  function startSSDPServer () {
-    self._updateAdvertisingPeer();
-    var usn = USN.stringify(self.peer);
-    self._server.setUSN(usn);
-    return self._server.startAsync();
-  }
-
-  var promise;
-  if (self._isAdvertising) {
-    // If we were already advertising, we need to restart the server so that a
-    // byebye is issued for the old USN and alive message for the new one.
-    promise = self._server.stopAsync().then(startSSDPServer);
-  } else {
-    self._isAdvertising = true;
-    promise = startSSDPServer().then(function () {
-      self._notifyStateChange();
+  // We need to restart the server so that a byebye is issued for the old USN
+  // and alive message for the new one.
+  return self._server.stopAsync()
+    .then(function () {
+      self._updateAdvertisingPeer();
+      var usn = USN.stringify(self.peer);
+      self._server.setUSN(usn);
+      return self._server.startAsync();
+    })
+    .catch(function (error) {
+      self._isAdvertising = false;
+      // if SSDP server can't be started we should stop our router server
+      return self._destroyExpressApp().then(function () {
+        return Promise.reject(error);
+      });
     });
-  }
-
-  return promise.catch(function (error) {
-    self._isAdvertising = false;
-    return Promise.reject(error);
-  });
 };
 
 /**
@@ -342,31 +338,15 @@ WifiAdvertiser.prototype.update = function () {
 WifiAdvertiser.prototype.stop = function () {
   var self = this;
 
-  if (!self._isStarted) {
+  if (!self._isAdvertising) {
     return Promise.resolve();
   }
-  self._isStarted = false;
+  self._isAdvertising = false;
 
-  var promise;
-  if (self._isAdvertising) {
-    self._isAdvertising = false;
-    promise = self._server.stopAsync().then(function () {
-      self.peer = null;
-    });
-  } else {
-    promise = Promise.resolve();
-  }
-
-  return promise.then(function () {
-    return self.routerServer.closeAllPromise();
+  return self._server.stopAsync().then(function () {
+    self.peer = null;
+    return self._destroyExpressApp();
   }).then(function () {
-    // The port needs to be reset, because
-    // otherwise there is no guarantee that
-    // the same port is available next time
-    // we start the router server.
-    self.routerServerPort = 0;
-    self.routerServer.removeListener('error', self.routerServerErrorListener);
-    self.routerServer = null;
     self._notifyStateChange();
   });
 };
@@ -451,6 +431,28 @@ WifiAdvertiser.prototype._setUpExpressApp = function (router, pskIdToSecret) {
       // may have changed when we re-start the router server.
       self._updateLocation();
     });
+};
+
+WifiAdvertiser.prototype._destroyExpressApp = function () {
+  var self = this;
+  var promise;
+
+  if (self.routerServer) {
+    promise = self.routerServer.closeAllPromise().then(function () {
+      self.routerServer.removeListener('error', self.routerServerErrorListener);
+      self.routerServer = null;
+    });
+  } else {
+    promise = Promise.resolve();
+  }
+
+  return promise.then(function () {
+    // The port needs to be reset, because
+    // otherwise there is no guarantee that
+    // the same port is available next time
+    // we start the router server.
+    self.routerServerPort = 0;
+  });
 };
 
 /**
@@ -969,13 +971,11 @@ function () {
       self._rejectPerWifiState().then(resolve, reject);
       return;
     }
-    var promise = advertiser.isStarted() ?
-      Promise.resolve() :
+    var promise = advertiser.isAdvertising() ?
+      advertiser.update() :
       advertiser.start(self._router, self._pskIdToSecret);
 
-    promise.then(function () {
-      return advertiser.update();
-    }).then(resolve, reject);
+    promise.then(resolve, reject);
   });
 };
 
