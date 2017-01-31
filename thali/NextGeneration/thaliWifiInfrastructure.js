@@ -1,5 +1,6 @@
 'use strict';
 
+var assert = require('assert');
 var EventEmitter = require('events').EventEmitter;
 var inherits = require('util').inherits;
 var https = require('https');
@@ -90,7 +91,7 @@ WifiListener.prototype.setMessageFilter = function (filterFn) {
 
 /**
  * @private
- * @param {object} data
+ * @param {Object} data
  * @param {boolean} available
  * @return {boolean}
  */
@@ -133,7 +134,7 @@ WifiListener.prototype._handleMessage = function (data, available) {
 /**
  * Function used to filter out SSDP messages that are not relevant for Thali.
  * @private
- * @param {object} data
+ * @param {Object} data
  * @return {boolean}
  */
 WifiListener.prototype._shouldBeIgnored = function (data) {
@@ -216,7 +217,6 @@ function WifiAdvertiser () {
   // advertised in SSDP messages.
   this.advertisedPortOverride = null;
   this.expressApp = null;
-  this.router = null;
   this.routerServer = null;
   this.routerServerPort = 0;
   this.routerServerAddress = ip.address();
@@ -284,24 +284,30 @@ WifiAdvertiser.prototype.start = function (router, pskIdToSecret) {
     return Promise.reject(new Error('Call Stop!'));
   }
   self._isAdvertising = true;
+  self._generateAdvertisingPeer();
 
   return self._setUpExpressApp(router, pskIdToSecret)
     .then(function () {
-      self._updateAdvertisingPeer();
-      var usn = USN.stringify(self.peer);
-      self._server.setUSN(usn);
-      return self._server.startAsync();
+      return self._startPeerAdvertising(self.peer);
     })
     .then(function () {
       self._notifyStateChange();
     })
     .catch(function (error) {
-      self._isAdvertising = false;
-      // if SSDP server can't be started we should stop our router server
-      return self._destroyExpressApp().then(function () {
-        return Promise.reject(error);
-      });
+      return self._errorStop(error);
     });
+};
+
+/**
+ * @param {Object} peer
+ * @param {string} peer.peerIdentifier
+ * @param {number} peer.generation
+ * @return {Promise}
+ */
+WifiAdvertiser.prototype._startPeerAdvertising = function (peer) {
+  var usn = USN.stringify(peer);
+  this._server.setUSN(usn);
+  return this._server.startAsync();
 };
 
 /**
@@ -318,17 +324,11 @@ WifiAdvertiser.prototype.update = function () {
   // and alive message for the new one.
   return self._server.stopAsync()
     .then(function () {
-      self._updateAdvertisingPeer();
-      var usn = USN.stringify(self.peer);
-      self._server.setUSN(usn);
-      return self._server.startAsync();
+      self.peer.generation++;
+      return self._startPeerAdvertising(self.peer);
     })
     .catch(function (error) {
-      self._isAdvertising = false;
-      // if SSDP server can't be started we should stop our router server
-      return self._destroyExpressApp().then(function () {
-        return Promise.reject(error);
-      });
+      return self._errorStop(error);
     });
 };
 
@@ -337,6 +337,7 @@ WifiAdvertiser.prototype.update = function () {
  */
 WifiAdvertiser.prototype.stop = function () {
   var self = this;
+
 
   if (!self._isAdvertising) {
     return Promise.resolve();
@@ -351,13 +352,21 @@ WifiAdvertiser.prototype.stop = function () {
   });
 };
 
+
+WifiAdvertiser.prototype._errorStop = function (error) {
+  this._isAdvertising = false;
+  this.peer = null;
+  return this._destroyExpressApp().then(function () {
+    return Promise.reject(error);
+  });
+};
+
 WifiAdvertiser.prototype.restartSSDPServer = function () {
   var self = this;
   return self._server.stopAsync().then(function () {
     return self._server.startAsync();
   }).catch(function (error) {
-    self._isAdvertising = false;
-    return Promise.reject(error);
+    return self._errorStop(error);
   });
 };
 
@@ -440,13 +449,15 @@ WifiAdvertiser.prototype._destroyExpressApp = function () {
   if (self.routerServer) {
     promise = self.routerServer.closeAllPromise().then(function () {
       self.routerServer.removeListener('error', self.routerServerErrorListener);
-      self.routerServer = null;
     });
   } else {
     promise = Promise.resolve();
   }
 
   return promise.then(function () {
+    self.expressApp = null;
+    self.routerServer = null;
+    self.routerServerErrorListener = null;
     // The port needs to be reset, because
     // otherwise there is no guarantee that
     // the same port is available next time
@@ -458,22 +469,19 @@ WifiAdvertiser.prototype._destroyExpressApp = function () {
 /**
  * @private
  */
-WifiAdvertiser.prototype._updateAdvertisingPeer = function () {
-  if (!this.peer) {
-    this.peer = {
-      peerIdentifier: uuid.v4(),
-      generation: 0
-    };
+WifiAdvertiser.prototype._generateAdvertisingPeer = function () {
+  assert(this.peer === null, 'Peer should not exist');
+  this.peer = {
+    peerIdentifier: uuid.v4(),
+    generation: 0
+  };
 
-    // Update own peers history
-    var history = this._ownPeerIdentifiersHistory;
-    history.push(this.peer.peerIdentifier);
-    if (history.length > thaliConfig.SSDP_OWN_PEERS_HISTORY_SIZE) {
-      var overflow = history.length - thaliConfig.SSDP_OWN_PEERS_HISTORY_SIZE;
-      history.splice(0, overflow);
-    }
-  } else {
-    this.peer.generation++;
+  // Update own peers history
+  var history = this._ownPeerIdentifiersHistory;
+  history.push(this.peer.peerIdentifier);
+  if (history.length > thaliConfig.SSDP_OWN_PEERS_HISTORY_SIZE) {
+    var overflow = history.length - thaliConfig.SSDP_OWN_PEERS_HISTORY_SIZE;
+    history.splice(0, overflow);
   }
 };
 
