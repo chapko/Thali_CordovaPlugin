@@ -699,7 +699,7 @@ function (networkStatus) {
   });
 };
 
-ThaliWifiInfrastructure.prototype.getCurrentState = function () {
+ThaliWifiInfrastructure.prototype._getCurrentState = function () {
   return {
     started: this._isStarted,
     listening: this.listener.isListening(),
@@ -707,7 +707,7 @@ ThaliWifiInfrastructure.prototype.getCurrentState = function () {
   };
 };
 
-ThaliWifiInfrastructure.prototype.getTargetState = function () {
+ThaliWifiInfrastructure.prototype._getTargetState = function () {
   return {
     started: this._isStarted,
     listening: this._isListening,
@@ -715,15 +715,15 @@ ThaliWifiInfrastructure.prototype.getTargetState = function () {
   };
 };
 
-ThaliWifiInfrastructure.prototype.getCurrentPeer = function () {
+ThaliWifiInfrastructure.prototype._getCurrentPeer = function () {
   return this.advertiser.peer;
 };
 
-ThaliWifiInfrastructure.prototype.getSSDPServer = function () {
+ThaliWifiInfrastructure.prototype._getSSDPServer = function () {
   return this.advertiser._server;
 };
 
-ThaliWifiInfrastructure.prototype.getSSDPClient = function () {
+ThaliWifiInfrastructure.prototype._getSSDPClient = function () {
   return this.listener._client;
 };
 

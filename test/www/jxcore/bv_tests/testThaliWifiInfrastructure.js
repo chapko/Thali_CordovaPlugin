@@ -42,7 +42,7 @@ var test = tape({
   setup: function (t) {
     wifiInfrastructure.start(express.Router(), pskIdToSecretHolder)
       .then(function () {
-        t.equals(wifiInfrastructure.getCurrentState().started, true,
+        t.equals(wifiInfrastructure._getCurrentState().started, true,
           'should be in started state');
         t.end();
       });
@@ -51,7 +51,7 @@ var test = tape({
     // Stop everything at the end of tests to make sure
     // the next test starts from clean state
     wifiInfrastructure.stop().then(function () {
-      t.equals(wifiInfrastructure.getCurrentState().started, false,
+      t.equals(wifiInfrastructure._getCurrentState().started, false,
         'should not be in started state');
       t.end();
     });
@@ -135,7 +135,7 @@ function(t) {
   var firstUuid = null;
   wifiInfrastructure.startUpdateAdvertisingAndListening().then(function () {
     // first invocation - generate new UUID and set 0 generation
-    var peer = wifiInfrastructure.getCurrentPeer();
+    var peer = wifiInfrastructure._getCurrentPeer();
     firstUuid = peer.peerIdentifier;
     t.deepEqual(peer, {
       peerIdentifier: firstUuid,
@@ -144,7 +144,7 @@ function(t) {
     return wifiInfrastructure.startUpdateAdvertisingAndListening();
   }).then(function () {
     // second invocation - use the same UUID and increment generation
-    var peer = wifiInfrastructure.getCurrentPeer();
+    var peer = wifiInfrastructure._getCurrentPeer();
     t.deepEqual(peer, {
       peerIdentifier: firstUuid,
       generation: 1
@@ -152,7 +152,7 @@ function(t) {
     return wifiInfrastructure.startUpdateAdvertisingAndListening();
   }).then(function () {
     // third invocation - the same as the second one
-    var peer = wifiInfrastructure.getCurrentPeer();
+    var peer = wifiInfrastructure._getCurrentPeer();
     t.deepEqual(peer, {
       peerIdentifier: firstUuid,
       generation: 2
@@ -166,12 +166,12 @@ test('#startUpdateAdvertisingAndListening generates new peerIdentifier after ' +
   var firstUuid = null;
   var secondUuid = null;
   wifiInfrastructure.startUpdateAdvertisingAndListening().then(function () {
-    firstUuid = wifiInfrastructure.getCurrentPeer().peerIdentifier;
+    firstUuid = wifiInfrastructure._getCurrentPeer().peerIdentifier;
     return wifiInfrastructure.stopAdvertisingAndListening();
   }).then(function () {
     return wifiInfrastructure.startUpdateAdvertisingAndListening();
   }).then(function () {
-    secondUuid = wifiInfrastructure.getCurrentPeer().peerIdentifier;
+    secondUuid = wifiInfrastructure._getCurrentPeer().peerIdentifier;
     t.notEqual(secondUuid, firstUuid, 'new UUID after advertising is stopped');
     t.end();
   }).catch(t.end);
@@ -218,7 +218,7 @@ test('#startUpdateAdvertisingAndListening sends correct requests', function (t) 
     // This is the first call to the update function after which
     // some USN value should be advertised.
     wifiInfrastructure.startUpdateAdvertisingAndListening().then(function () {
-      ourUSN = USN.stringify(wifiInfrastructure.getCurrentPeer());
+      ourUSN = USN.stringify(wifiInfrastructure._getCurrentPeer());
     });
   });
 });
@@ -259,7 +259,7 @@ test('Delayed own message are still ignored after advertisement has been ' +
     var capturedMessages = [];
 
     sandbox.stub(
-      wifiInfrastructure.getSSDPServer(),
+      wifiInfrastructure._getSSDPServer(),
       '_send',
       function (message) {
         // _parseMessage fires 'advertise-alive/bye' events
@@ -369,8 +369,8 @@ test('#start should fail if called twice in a row', function (t) {
 
 test('should not be started after stop is called', function (t) {
   wifiInfrastructure.stop().then(function () {
-    var currentState = wifiInfrastructure.getCurrentState();
-    var targetState = wifiInfrastructure.getTargetState();
+    var currentState = wifiInfrastructure._getCurrentState();
+    var targetState = wifiInfrastructure._getTargetState();
     t.notOk(currentState.started, 'should not be started');
     t.notOk(currentState.listening, 'should not be listening');
     t.notOk(currentState.advertising, 'should not be advertising');
@@ -486,12 +486,12 @@ test('#startUpdateAdvertisingAndListening bad psk should be rejected ' +
 test('#stop can be called multiple times in a row', function (t) {
   wifiInfrastructure.stop()
   .then(function () {
-    var currentState = wifiInfrastructure.getCurrentState();
+    var currentState = wifiInfrastructure._getCurrentState();
     t.equal(currentState.started, false, 'should be in stopped state');
     return wifiInfrastructure.stop();
   })
   .then(function () {
-    var currentState = wifiInfrastructure.getCurrentState();
+    var currentState = wifiInfrastructure._getCurrentState();
     t.equal(currentState.started, false, 'should still be in stopped state');
     t.end();
   });
@@ -501,12 +501,12 @@ test('#startListeningForAdvertisements can be called multiple times in a row',
 function (t) {
   wifiInfrastructure.startListeningForAdvertisements()
   .then(function () {
-    t.equal(wifiInfrastructure.getCurrentState().listening, true,
+    t.equal(wifiInfrastructure._getCurrentState().listening, true,
       'should be in listening state');
     return wifiInfrastructure.startListeningForAdvertisements();
   })
   .then(function () {
-    t.equal(wifiInfrastructure.getCurrentState().listening, true,
+    t.equal(wifiInfrastructure._getCurrentState().listening, true,
       'should still be in listening state');
     t.end();
   });
@@ -516,12 +516,12 @@ test('#stopListeningForAdvertisements can be called multiple times in a row',
 function (t) {
   wifiInfrastructure.stopListeningForAdvertisements()
   .then(function () {
-    t.equal(wifiInfrastructure.getCurrentState().listening, false,
+    t.equal(wifiInfrastructure._getCurrentState().listening, false,
       'should not be in listening state');
     return wifiInfrastructure.stopListeningForAdvertisements();
   })
   .then(function () {
-    t.equal(wifiInfrastructure.getCurrentState().listening, false,
+    t.equal(wifiInfrastructure._getCurrentState().listening, false,
       'should still not be in listening state');
     t.end();
   });
@@ -531,12 +531,12 @@ test('#stopAdvertisingAndListening can be called multiple times in a row',
 function (t) {
   wifiInfrastructure.stopAdvertisingAndListening()
   .then(function () {
-    t.equal(wifiInfrastructure.getCurrentState().advertising, false,
+    t.equal(wifiInfrastructure._getCurrentState().advertising, false,
       'should not be in advertising state');
     return wifiInfrastructure.stopAdvertisingAndListening();
   })
   .then(function () {
-    t.equal(wifiInfrastructure.getCurrentState().advertising, false,
+    t.equal(wifiInfrastructure._getCurrentState().advertising, false,
       'should still not be in advertising state');
     t.end();
   });
@@ -622,13 +622,13 @@ test('does not get peer changes from self', function (t) {
   wifiInfrastructure.startListeningForAdvertisements().then(function () {
     return wifiInfrastructure.startUpdateAdvertisingAndListening();
   }).then(function () {
-    var peerId = wifiInfrastructure.getCurrentPeer().peerIdentifier;
+    var peerId = wifiInfrastructure._getCurrentPeer().peerIdentifier;
     knownOwnPeerIdentifiers.push(peerId);
     return Promise.delay(thaliConfig.SSDP_ADVERTISEMENT_INTERVAL * 2);
   }).then(function () {
     return wifiInfrastructure.startUpdateAdvertisingAndListening();
   }).then(function () {
-    var peerId = wifiInfrastructure.getCurrentPeer().peerIdentifier;
+    var peerId = wifiInfrastructure._getCurrentPeer().peerIdentifier;
     knownOwnPeerIdentifiers.push(peerId);
     return Promise.delay(thaliConfig.SSDP_ADVERTISEMENT_INTERVAL * 2);
   }).then(function () {
