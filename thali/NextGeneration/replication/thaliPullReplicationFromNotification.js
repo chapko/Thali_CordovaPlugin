@@ -137,10 +137,10 @@ ThaliPullReplicationFromNotification.prototype._peerAdvertisesDataForUsHandler =
     this._peerDictionary[key] = newAction;
     this._bindRemoveActionFromPeerDictionary(newAction, key);
 
-    var enqueueError = this._thaliPeerPoolInterface.enqueue(newAction);
-    if (enqueueError) {
-      logger.warn('_peerAdvertisesDataForUsHandler: failed to enqueue an item: %s',
-        enqueueError.message);
+    try {
+      this._thaliPeerPoolInterface.enqueue(newAction);
+    } catch (error) {
+      this.emit('error', error);
     }
   };
 
