@@ -147,6 +147,9 @@ ThaliManager.prototype.start = function (arrayOfRemoteKeys) {
   );
   this.state = ThaliManager.STATES.STARTING;
 
+  logger.debug('starting thaliPeerPoolInterface');
+  var peerPoolInterfaceStart = this._thaliPeerPoolInterface.start();
+
   logger.debug('starting thaliPullReplicationFromNotification');
   var pullReplicationStart =
     this._thaliPullReplicationFromNotification.start(arrayOfRemoteKeys);
@@ -168,6 +171,7 @@ ThaliManager.prototype.start = function (arrayOfRemoteKeys) {
     });
 
   this._startingPromise = Promise.all([
+    peerPoolInterfaceStart,
     pullReplicationStart,
     sendNotificationsStart,
     thaliMobileStart,
@@ -210,6 +214,9 @@ ThaliManager.prototype.stop = function () {
   );
   self.state = ThaliManager.STATES.STOPPING;
 
+  logger.debug('stopping thaliPeerPoolInterface');
+  var peerPoolInterfaceStop = this._thaliPeerPoolInterface.stop();
+
   logger.debug('stopping thaliPullReplicationFromNotification');
   var pullReplicationStop =
     this._thaliPullReplicationFromNotification.stop();
@@ -222,6 +229,7 @@ ThaliManager.prototype.stop = function () {
   var thaliMobileStop = ThaliMobile.stop();
 
   this._stoppingPromise = Promise.all([
+    peerPoolInterfaceStop,
     pullReplicationStop,
     sendNotificationsStop,
     thaliMobileStop,

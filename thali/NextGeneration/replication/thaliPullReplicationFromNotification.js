@@ -204,9 +204,6 @@ ThaliPullReplicationFromNotification.prototype.start =
       this._boundAdvertiser
     );
     this._thaliNotificationClient.start(prioritizedReplicationList);
-
-    logger.debug('starting thaliPeerPoolInterface');
-    this._thaliPeerPoolInterface.start();
   };
 
 /**
@@ -230,8 +227,6 @@ ThaliPullReplicationFromNotification.prototype.stop = function () {
     'ThaliPullReplicationFromNotification state should be \'STARTED\' for stop'
   );
   self.state = ThaliPullReplicationFromNotification.STATES.STOPPED;
-
-  self._thaliPeerPoolInterface.stop();
 
   self._thaliNotificationClient.removeListener(
     self._thaliNotificationClient.Events.PeerAdvertisesDataForUs,
