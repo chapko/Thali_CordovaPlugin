@@ -231,6 +231,8 @@ ThaliPullReplicationFromNotification.prototype.stop = function () {
   );
   self.state = ThaliPullReplicationFromNotification.STATES.STOPPED;
 
+  self._thaliPeerPoolInterface.stop();
+
   self._thaliNotificationClient.removeListener(
     self._thaliNotificationClient.Events.PeerAdvertisesDataForUs,
     self._boundAdvertiser
