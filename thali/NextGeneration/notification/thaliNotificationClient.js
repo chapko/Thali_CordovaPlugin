@@ -78,7 +78,19 @@ function ThaliNotificationClient(thaliPeerPoolInterface, ecdhForLocalDevice) {
     ThaliNotificationClient.Errors.EDCH_FOR_LOCAL_DEVICE_NOT_NULL);
 
   this.peerDictionary = null;
+  var _thaliPeerPoolInterface = null;
+  Object.defineProperty(this, '_thaliPeerPoolInterface', {
+    get: function () { return _thaliPeerPoolInterface; },
+    set: function (v) {
+      console.log('set to', v);
+      if (!v) {
+        throw new Error('why?!');
+      }
+      _thaliPeerPoolInterface = v;
+    }
+  });
   this._thaliPeerPoolInterface = thaliPeerPoolInterface;
+
   this._ecdhForLocalDevice = ecdhForLocalDevice;
   this._publicKeysToListen = [];
   this._publicKeysToListenHashes = [];
@@ -269,6 +281,9 @@ ThaliNotificationClient.prototype._createNotificationAction =
     peerEntry.notificationAction = action;
 
     try {
+      if (!this._thaliPeerPoolInterface.enqueue) {
+        console.log(this._thaliPeerPoolInterface);
+      }
       this._thaliPeerPoolInterface.enqueue(action);
       this.peerDictionary.addUpdateEntry(peer, peerEntry);
     } catch (error) {

@@ -116,7 +116,17 @@ test('Coordinated pull replication from notification test', function (t) {
       var partnerKeys = testUtils.turnParticipantsIntoBufferArray(
         t, devicePublicKey
       );
+      console.log('Starting peer pool');
+      thaliPeerPoolDefault.start();
+      if (thaliPeerPoolDefault.enqueue) {
+        console.log(thaliPeerPoolDefault);
+      } else {
+        console.log(thaliPeerPoolDefault);
+        throw new Error('no enqueue');
+      }
+      console.log('Starting pull replication');
       thaliPullReplicationFromNotification.start(partnerKeys);
+      console.log('Starting server infra');
       return testUtils.startServerInfrastructure(
         thaliNotificationServer, partnerKeys, ThaliMobile, router
       );
