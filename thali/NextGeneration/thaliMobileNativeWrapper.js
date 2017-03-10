@@ -293,7 +293,7 @@ function stopCreateAndStartServersManager() {
 // jscs:enable jsDoc
 module.exports.start = function (router, pskIdToSecret) {
   targetStates.started = true;
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_start(resolve, reject) {
     if (states.started) {
       return reject(new Error('Call Stop!'));
     }
@@ -422,6 +422,12 @@ module.exports.stop = function () {
   targetStates.started = false;
   targetStates.listening = false;
   targetStates.advertising = false;
+  logger.info('enqueuing stop');
+  logger.info('promiseQueue:\n' +
+    gPromiseQueue._promiseFunctionArray.map(function (item) {
+      return '    ' + item.fn.name
+    }).join('\n')
+  );
   return gPromiseQueue.enqueue(stop);
 };
 
@@ -450,7 +456,7 @@ module.exports.stop = function () {
  */
 module.exports.startListeningForAdvertisements = function () {
   targetStates.listening = true;
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_startListeningForAdvertisements(resolve, reject) {
     if (!states.started) {
       return reject(new Error('Call Start!'));
     }
@@ -483,7 +489,7 @@ module.exports.startListeningForAdvertisements = function () {
  */
 module.exports.stopListeningForAdvertisements = function () {
   targetStates.listening = false;
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_stopListeningForAdvertisements(resolve, reject) {
     Mobile('stopListeningForAdvertisements').callNative(function (error) {
       if (error) {
         return reject(new Error(error));
@@ -561,10 +567,17 @@ module.exports.stopListeningForAdvertisements = function () {
  * @public
  * @returns {Promise<?Error>}
  */
+var id = 0;
 module.exports.startUpdateAdvertisingAndListening = function () {
+  var iid = ++id;
+  var start = Date.now();
   targetStates.advertising = true;
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  var log = console.log.bind(console, 'NW_advertise(' + iid + ')');
+  log('enqueuing');
+  return gPromiseQueue.enqueue(function NW_startUpdateAdvertisingAndListening(resolve, reject) {
+    log('start running');
     if (!states.started) {
+      log('reject (not started)')
       return reject(new Error('Call Start!'));
     }
 
@@ -572,13 +585,18 @@ module.exports.startUpdateAdvertisingAndListening = function () {
       gServersManagerLocalPort :
       gRouterServerPort;
 
+    log('callNative');
     Mobile('startUpdateAdvertisingAndListening').callNative(
       port,
       function (error) {
         if (error) {
-          return reject(new Error(error));
+          log('callNative callback error:', error);
+          reject(new Error(error));
+        } else {
+          log('callNative success');
+          resolve();
         }
-        resolve();
+        log('finished in ' + (Date.now() - start) + 'ms');
       }
     );
   });
@@ -603,7 +621,7 @@ module.exports.startUpdateAdvertisingAndListening = function () {
  */
 module.exports.stopAdvertisingAndListening = function () {
   targetStates.advertising = false;
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_stopAdvertisingAndListening(resolve, reject) {
     Mobile('stopAdvertisingAndListening').callNative(function (error) {
       if (error) {
         return reject(new Error(error));
@@ -631,7 +649,7 @@ module.exports.stopAdvertisingAndListening = function () {
  * @returns {Promise<module:thaliMobileNative~networkChanged>}
  */
 module.exports.getNonTCPNetworkStatus = function () {
-  return gPromiseQueue.enqueue(function (resolve) {
+  return gPromiseQueue.enqueue(function NW_getNonTCPNetworkStatus(resolve) {
     if (gNonTcpNetworkStatus === null) {
       module.exports.emitter.once('networkChangedNonTCP',
       function (networkChangedValue) {
@@ -669,7 +687,7 @@ var multiConnectCounter = 0;
  * with the localhost port to connect to or an Error object.
  */
 module.exports._multiConnect = function (peerIdentifier) {
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_multiConnect(resolve, reject) {
     var originalSyncValue = String(multiConnectCounter);
     multiConnectCounter++;
     logger.debug(
@@ -728,7 +746,7 @@ module.exports._terminateConnection = function (incomingConnectionId) {
   if (platform.isIOS) {
     return Promise.reject(new Error('Not connect platform'));
   }
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_terminateConnection(resolve, reject) {
     gServersManager.terminateIncomingConnection(incomingConnectionId)
     .then(function () {
       resolve();
@@ -752,7 +770,7 @@ module.exports._terminateConnection = function (incomingConnectionId) {
  * a null result.
  */
 module.exports._disconnect = function (peerIdentifier) {
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_disconnect(resolve, reject) {
     Mobile('disconnect').callNative(peerIdentifier, function (errorMsg) {
       if (errorMsg) {
         reject(new Error(errorMsg));
@@ -810,7 +828,7 @@ module.exports._terminateListener = function (peerIdentifier, port) {
   if (platform.isIOS) {
     return Promise.reject(new Error('Not connect platform'));
   }
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_terminateListener(resolve, reject) {
     gServersManager.terminateOutgoingConnection(peerIdentifier, port)
     .then(function () {
       delete peerGenerations[peerIdentifier];
@@ -849,7 +867,7 @@ module.exports._terminateListener = function (peerIdentifier, port) {
  */
 // jscs:enable jsDoc
 module.exports.killConnections = function () {
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_killConnections(resolve, reject) {
     Mobile('killConnections').callNative(function (error) {
       if (error) {
         reject(new Error(error));
@@ -873,7 +891,7 @@ module.exports.toggleWiFi = function (value) {
     ));
   }
 
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_toggleWiFi(resolve, reject) {
     Mobile.toggleWiFi(value, function (error) {
       if (error) {
         reject(error);
@@ -895,7 +913,7 @@ module.exports.lockAndroidWifiMulticast = function () {
       'Mobile(\'lockAndroidWifiMulticast\') is not implemented on ios'));
   }
 
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_lockAndroidWifiMulticast(resolve, reject) {
     Mobile('lockAndroidWifiMulticast').callNative(function (error) {
       if (error) {
         return reject(new Error(error));
@@ -917,7 +935,7 @@ module.exports.unlockAndroidWifiMulticast = function () {
       'Mobile(\'unlockAndroidWifiMulticast\') is not implemented on ios'));
   }
 
-  return gPromiseQueue.enqueue(function (resolve, reject) {
+  return gPromiseQueue.enqueue(function NW_unlockAndroidWifiMulticast(resolve, reject) {
     Mobile('unlockAndroidWifiMulticast').callNative(function (error) {
       if (error) {
         return reject(new Error(error));

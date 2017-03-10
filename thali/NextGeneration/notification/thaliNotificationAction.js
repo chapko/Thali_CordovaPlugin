@@ -125,8 +125,11 @@ ThaliNotificationAction.prototype.start = function (httpAgentPool) {
   var p = ThaliNotificationAction.super_.prototype.start
     .call(this, httpAgentPool);
 
+  var log = console.log.bind(console, 'notaction:start(' + this._id + ')');
+
   return p
     .then(function () {
+      log('Getting peer host info')
       return ThaliMobile.getPeerHostInfo(
         self.getPeerIdentifier(),
         self.getConnectionType()
@@ -137,6 +140,7 @@ ThaliNotificationAction.prototype.start = function (httpAgentPool) {
       });
     })
     .then(function (peerHostInfo) {
+      log('Peer host info: ' + JSON.stringify(peerHostInfo));
       self._peerConnection = {
         hostAddress: peerHostInfo.hostAddress,
         portNumber: peerHostInfo.portNumber,
@@ -161,7 +165,10 @@ ThaliNotificationAction.prototype.start = function (httpAgentPool) {
         };
 
         self._httpRequest = https.request(options,
-          self._responseCallback.bind(self));
+          function (res) {
+            log('got response');
+            self._responseCallback.apply(self, arguments);
+          });
 
         // Error event handler is fired on DNS resolution, TCP protocol,
         // or HTTP protocol errors. Or if the httpRequest.abort is called.
@@ -170,11 +177,13 @@ ThaliNotificationAction.prototype.start = function (httpAgentPool) {
         // from kill is ignored at this point and it is not causing
         // anything in the _complete function because it is the second call to
         // _complete.
-        self._httpRequest.on('error', function () {
+        self._httpRequest.on('error', function (error) {
+          log('got error:', error.message, error.stack);
           self._complete(
             ThaliNotificationAction.ActionResolution.NETWORK_PROBLEM,
             null, 'Could not establish TCP connection');
         });
+        log('Sending https request to ' + options.hostname + ':' + options.port);
         self._httpRequest.end();
       });
     });

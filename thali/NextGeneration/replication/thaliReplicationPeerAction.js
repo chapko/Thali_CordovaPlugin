@@ -45,7 +45,8 @@ function ThaliReplicationPeerAction(peerAdvertisesDataForUs,
   assert(dbName, 'there must be dbName');
   assert(ourPublicKey, 'there must be an ourPublicKey');
 
-  ThaliReplicationPeerAction.super_.call(this, peerAdvertisesDataForUs.keyId,
+  ThaliReplicationPeerAction.super_.call(this,
+    peerAdvertisesDataForUs.peerId,
     peerAdvertisesDataForUs.connectionType,
     ThaliReplicationPeerAction.ACTION_TYPE,
     peerAdvertisesDataForUs.pskIdentifyField,

@@ -155,7 +155,7 @@ WifiListener.prototype._handleMessage = function (data, available) {
 /**
  * @return {Promise}
  */
-WifiListener.prototype.start = enqueued(function () {
+WifiListener.prototype.start = enqueued(function WFL_start() {
   var self = this;
 
   if (self._isListening) {
@@ -178,7 +178,7 @@ WifiListener.prototype.start = enqueued(function () {
 /**
  * @return {Promise}
  */
-WifiListener.prototype.stop = enqueued(function () {
+WifiListener.prototype.stop = enqueued(function WFL_stop() {
   var self = this;
   if (!self._isListening) {
     return Promise.resolve();
@@ -322,7 +322,7 @@ WifiAdvertiser.prototype.isAdvertising = function () {
  * @param {module:thaliMobileNativeWrapper~pskIdToSecret} pskIdToSecret
  * @return {Promise}
  */
-WifiAdvertiser.prototype.start = enqueued(function (router, pskIdToSecret) {
+WifiAdvertiser.prototype.start = enqueued(function WFA_start(router, pskIdToSecret) {
   var self = this;
   if (self._isAdvertising) {
     return Promise.reject(new Error('Call Stop!'));
@@ -357,7 +357,7 @@ WifiAdvertiser.prototype._startPeerAdvertising = function (peer) {
 /**
  * @return {Promise}
  */
-WifiAdvertiser.prototype.update = enqueued(function () {
+WifiAdvertiser.prototype.update = enqueued(function WFA_update() {
   var self = this;
 
   if (!self._isAdvertising) {
@@ -379,7 +379,7 @@ WifiAdvertiser.prototype.update = enqueued(function () {
 /**
  * @return {Promise}
  */
-WifiAdvertiser.prototype.stop = enqueued(function () {
+WifiAdvertiser.prototype.stop = enqueued(function WFA_stop() {
   var self = this;
 
   if (!self._isAdvertising) {
@@ -698,6 +698,13 @@ ThaliWifiInfrastructure.prototype._setUpEvents = function() {
 
 inherits(ThaliWifiInfrastructure, EventEmitter);
 
+ThaliWifiInfrastructure.prototype._isDisconnected = function () {
+  var lastStatus = this._lastNetworkStatus;
+  return lastStatus ?
+    (lastStatus.wifi === 'off' || lastStatus.bssidName === null) :
+    false;
+};
+
 ThaliWifiInfrastructure.prototype._handleNetworkChanges =
 function (networkStatus) {
   var lastStatus = this._lastNetworkStatus;
@@ -730,6 +737,10 @@ function (networkStatus) {
   assert((disconnectedFromAP && connectedToAP) === false,
     'either connected or disconnected');
 
+  logger.info('Last network state: ' + JSON.stringify(this._lastNetworkStatus, null, 2));
+  logger.info('New network state: ' + JSON.stringify(networkStatus, null, 2));
+  logger.info('Target state: ' + JSON.stringify(this._targetState, null, 2));
+
   this._lastNetworkStatus = networkStatus;
 
   // If we are stopping or the wifi state hasn't changed,
@@ -738,6 +749,13 @@ function (networkStatus) {
   if (!this._targetState.started || noWifiChanges) {
     return;
   }
+
+  logger.info(
+    'Status:\n' +
+    '  connectedToAP: ' + JSON.stringify(connectedToAP) + '\n' +
+    '  disconnectedFromAP: ' + JSON.stringify(disconnectedFromAP) + '\n' +
+    '  changedAP: ' + JSON.stringify(changedAP)
+  );
 
   var actionResults = [];
 
@@ -807,7 +825,7 @@ ThaliWifiInfrastructure.prototype.start = function (router, pskIdToSecret) {
 };
 
 ThaliWifiInfrastructure.prototype._enqueuedStart =
-enqueued(function (router, pskIdToSecret) {
+enqueued(function WF_start(router, pskIdToSecret) {
   var self = this;
   thaliMobileNativeWrapper.emitter
     .on('networkChangedNonTCP', self._networkChangedHandler);
@@ -843,10 +861,17 @@ ThaliWifiInfrastructure.prototype.stop = function () {
   this._targetState.started = false;
   this._targetState.advertising = false;
   this._targetState.listening = false;
+
+  logger.info('enqueuing stop');
+  logger.info('promiseQueue:\n' +
+    this._promiseQueue._promiseFunctionArray.map(function (item) {
+      return '    ' + item.fn.name;
+    }).join('\n')
+  );
   return this._enqueuedStop();
 };
 
-ThaliWifiInfrastructure.prototype._enqueuedStop = enqueued(function () {
+ThaliWifiInfrastructure.prototype._enqueuedStop = enqueued(function WF_stop() {
   var self = this;
   thaliMobileNativeWrapper.emitter
     .removeListener('networkChangedNonTCP', self._networkChangedHandler);
@@ -890,11 +915,11 @@ function () {
 };
 
 ThaliWifiInfrastructure.prototype._enqueuedStartListeningForAdvertisements =
-enqueued(function () {
+enqueued(function WF_startList() {
   if (!this._isStarted) {
     return Promise.reject(new Error('Call Start!'));
   }
-  if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
+  if (this._isDisconnected()) {
     return this._rejectPerWifiState();
   }
   return this.listener.start();
@@ -928,7 +953,7 @@ function () {
 };
 
 ThaliWifiInfrastructure.prototype._enqueuedStopListeningForAdvertisements =
-enqueued(function () {
+enqueued(function WF_stopList() {
   return this.listener.stop();
 });
 
@@ -1005,12 +1030,12 @@ function () {
 };
 
 ThaliWifiInfrastructure.prototype._enqueuedStartUpdateAdvertisingAndListening =
-enqueued(function () {
+enqueued(function WF_startAdv() {
   if (!this._isStarted) {
     return Promise.reject(new Error('Call Start!'));
   }
 
-  if (this._lastNetworkStatus && this._lastNetworkStatus.wifi === 'off') {
+  if (this._isDisconnected()) {
     return this._rejectPerWifiState();
   }
 
@@ -1040,7 +1065,7 @@ ThaliWifiInfrastructure.prototype.stopAdvertisingAndListening = function () {
 };
 
 ThaliWifiInfrastructure.prototype._enqueuedStopAdvertisingAndListening =
-enqueued(function () {
+enqueued(function WF_startAdv() {
   return this.advertiser.stop();
 });
 
@@ -1050,20 +1075,18 @@ ThaliWifiInfrastructure.prototype._pauseAdvertisingAndListening =
 
 ThaliWifiInfrastructure.prototype._rejectPerWifiState = function () {
   var errorMessage;
-  switch (this._lastNetworkStatus.wifi) {
-    case 'off': {
-      errorMessage = 'Radio Turned Off';
-      break;
-    }
-    case 'notHere': {
-      errorMessage = 'No Wifi radio';
-      break;
-    }
-    default: {
-      logger.warn('Got unexpected Wifi state: %s',
-        this.states.networkStatus.wifi);
-      errorMessage = 'Unspecified Error with Radio infrastructure';
-    }
+  var wifi = this._lastNetworkStatus.wifi;
+  var bssidName = this._lastNetworkStatus.bssidName;
+  if (wifi === 'off') {
+    errorMessage = 'Radio Turned Off';
+  } else if (wifi === 'notHere') {
+    errorMessage = 'No Wifi radio';
+  } else if (bssidName === null) {
+    errorMessage = 'Not connected to WiFi access point';
+  } else {
+    logger.warn('Got unexpected Wifi state (wifi: %s, bssidName: %s)',
+      JSON.stringify(wifi), JSON.stringify(bssidName));
+    errorMessage = 'Unspecified Error with Radio infrastructure';
   }
   return Promise.reject(new Error(errorMessage));
 };

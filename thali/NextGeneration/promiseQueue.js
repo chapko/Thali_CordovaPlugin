@@ -94,9 +94,31 @@ PromiseQueue.prototype._changeQueue = function (fn, unshiftOrPushFn) {
     self.globalPromise = self.globalPromise.then(function () {
       return new Promise(function (globalResolve) {
         var nextPromise = self._promiseFunctionArray.shift();
+        var name = nextPromise.fn.name || nextPromise.fn.surname;
+        if (name) {
+          console.log('promiseQueue: running', name);
+        }
+        var rs = _finishPromise(nextPromise.localResolve, globalResolve);
+        var rj = _finishPromise(nextPromise.localReject, globalResolve);
+        var start = Date.now();
+        var fn = nextPromise.fn
+        function end() {
+          var t = Date.now() - start;
+          if (t > 3000) {
+            var n = name || fn.toString().substring(0, 400);
+            console.log('fn took ' + t + 'ms:', n);
+          }
+        }
         nextPromise.fn(
-          _finishPromise(nextPromise.localResolve, globalResolve),
-          _finishPromise(nextPromise.localReject, globalResolve));
+          function (v) {
+            end();
+            return rs(v);
+          },
+          function (err) {
+            end();
+            return rj(err);
+          }
+        )
       });
     });
   });

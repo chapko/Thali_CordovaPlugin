@@ -232,7 +232,7 @@ function start (router, pskIdToSecret, networkType) {
  * @returns {Promise<module:thaliMobile~combinedResult>}
  */
 module.exports.start = function (router, pskIdToSecret, networkType) {
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return promiseQueue.enqueue(function TM_start(resolve, reject) {
     thaliMobileStates.startArguments.router = router;
     thaliMobileStates.startArguments.pskIdToSecret = pskIdToSecret;
     thaliMobileStates.startArguments.networkType = networkType;
@@ -256,17 +256,29 @@ module.exports.isStarted = function () {
  * @returns {Promise<module:thaliMobile~combinedResult>}
  */
 module.exports.stop = function () {
-  return promiseQueue.enqueue(function (resolve) {
+  logger.info('enqueuing stop');
+  logger.info('promiseQueue:\n' +
+    promiseQueue._promiseFunctionArray.map(function (item) {
+      return '    ' + item.fn.name
+    }).join('\n')
+  );
+  return promiseQueue.enqueue(function TM_stop(resolve) {
+    logger.info('stopping started');
     resetThaliMobileState();
     removeAllAvailabilityWatchersFromPeers();
+    logger.info('clearing peer availabilities');
     Object.getOwnPropertyNames(connectionTypes)
       .forEach(function (connectionKey) {
         var connectionType = connectionTypes[connectionKey];
         changePeersUnavailable(connectionType);
       });
 
+    logger.info('stopping transport');
     getWifiOrNativeMethodByNetworkType('stop', thaliMobileStates.networkType)()
-      .then(resolve);
+      .then(function (result) {
+        logger.info('transport stopped: ' + JSON.stringify(result))
+        resolve()
+      });
   });
 };
 
@@ -321,7 +333,7 @@ module.exports._startListeningForAdvertisements =
  * @returns {Promise<module:thaliMobile~combinedResult>}
  */
 module.exports.startListeningForAdvertisements = function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return promiseQueue.enqueue(function TM_startListeningForAdvertisements(resolve, reject) {
     module.exports._startListeningForAdvertisements().then(resolve, reject);
   });
 };
@@ -337,7 +349,7 @@ module.exports.startListeningForAdvertisements = function () {
  * @returns {Promise<module:thaliMobile~combinedResult>}
  */
 module.exports.stopListeningForAdvertisements = function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return promiseQueue.enqueue(function TM_stopListeningForAdvertisements(resolve, reject) {
     thaliMobileStates.listening = false;
 
     getWifiOrNativeMethodByNetworkType('stopListeningForAdvertisements',
@@ -388,7 +400,7 @@ module.exports._startUpdateAdvertisingAndListening =
  * @returns {Promise<module:thaliMobile~combinedResult>}
  */
 module.exports.startUpdateAdvertisingAndListening = function () {
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return promiseQueue.enqueue(function TM_startUpdateAdvertisingAndListening(resolve, reject) {
     module.exports._startUpdateAdvertisingAndListening().then(resolve, reject);
   });
 };
@@ -405,7 +417,7 @@ module.exports.startUpdateAdvertisingAndListening = function () {
  * @returns {Promise<module:thaliMobile~combinedResult>}
  */
 module.exports.stopAdvertisingAndListening = function () {
-  return promiseQueue.enqueue(function (resolve) {
+  return promiseQueue.enqueue(function TM_stopAdvertisingAndListening(resolve) {
     thaliMobileStates.advertising = false;
 
     var stopAdvertisingAndListening = getWifiOrNativeMethodByNetworkType(
@@ -432,7 +444,7 @@ module.exports.stopAdvertisingAndListening = function () {
  */
 module.exports.getNetworkStatus = function () {
   var networkType = thaliMobileStates.networkType;
-  return promiseQueue.enqueue(function (resolve, reject) {
+  return promiseQueue.enqueue(function TM_getNetworkStatus(resolve, reject) {
     switch (networkType) {
       case networkTypes.NATIVE:
       case networkTypes.BOTH: {
@@ -610,7 +622,7 @@ module.exports.disconnect =
     if (connectionType === connectionTypes.TCP_NATIVE) {
       return Promise.reject(new Error('Wifi does not support disconnect'));
     }
-    return promiseQueue.enqueue(function (resolve, reject) {
+    return promiseQueue.enqueue(function TM_disconnect(resolve, reject) {
       return ThaliMobileNativeWrapper
         .disconnect(peerIdentifier, portNumber)
         .then(resolve, reject);

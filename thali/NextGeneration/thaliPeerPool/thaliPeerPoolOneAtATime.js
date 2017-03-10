@@ -251,9 +251,10 @@ ThaliPeerPoolOneAtATime.prototype._bluetoothEnqueue = function (peerAction) {
               // in thaliMobileNativeWrapper are indexed by MAC. So use the
               // MAC from the associated notification action. Yes, we really
               // should fix this.
-              thaliMobileNativeWrapper._getServersManager()
-                .terminateOutgoingConnection(peerAction.getPeerIdentifier(),
-                  replicationAction.getPeerAdvertisesDataForUs().portNumber);
+
+              // thaliMobileNativeWrapper._getServersManager()
+              //   .terminateOutgoingConnection(peerAction.getPeerIdentifier(),
+              //     replicationAction.getPeerAdvertisesDataForUs().portNumber);
               self._bluetoothReplicationAction = null;
               peerAction.kill();
               resolve(true);
@@ -261,9 +262,12 @@ ThaliPeerPoolOneAtATime.prototype._bluetoothEnqueue = function (peerAction) {
             });
         }
         peerAction.kill();
-        thaliMobileNativeWrapper._getServersManager()
-          .terminateOutgoingConnection(peerAction.getPeerIdentifier(),
-            peerAction.getConnectionInformation().portNumber);
+        // var connInfo = peerAction.getConnectionInformation();
+        // if (connInfo) {
+        //   thaliMobileNativeWrapper._getServersManager()
+        //     .terminateOutgoingConnection(peerAction.getPeerIdentifier(),
+        //       connInfo.portNumber);
+        // }
         resolve(true);
         return null;
       });

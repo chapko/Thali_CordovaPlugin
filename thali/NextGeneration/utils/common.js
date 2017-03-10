@@ -67,10 +67,13 @@ var enqueued = function (atTop, fn) {
     var self = this;
     var args = arguments;
     var method = atTop ? 'enqueueAtTop' : 'enqueue';
-    return self._promiseQueue[method](function (resolve, reject) {
+    var wrapper = function (resolve, reject) {
+      var bogus_var_in_enqueue_wrapper;
       var result = fn.apply(self, args);
       Promise.resolve(result).then(resolve, reject);
-    });
+    }
+    wrapper.surname = fn.name;
+    return self._promiseQueue[method](wrapper);
   };
 };
 
